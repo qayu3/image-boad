@@ -86,6 +86,9 @@ button{font:inherit;color:inherit}
 .pin-label.empty{display:none}
 .pin-label[contenteditable="true"],.pin-label[contenteditable="plaintext-only"]{display:block;min-width:60px;cursor:text;user-select:text;-webkit-user-select:text;text-overflow:clip}
 .selbox.locked{border-style:dashed;border-width:1px}
+.selbox.group{border-style:solid;border-width:1.5px}
+.selbox.group::after{content:"グループ";position:absolute;left:-1px;top:-24px;font-size:11px;line-height:1;padding:5px 7px;border-radius:6px;background:var(--accent);color:var(--accent-ink);white-space:nowrap}
+.gbox{position:absolute;border:1px dashed var(--accent);opacity:.6;pointer-events:none}
 .selbox.locked::after{content:"固定中";position:absolute;left:-1px;top:-24px;font-size:11px;line-height:1;padding:5px 7px;border-radius:6px;background:var(--accent);color:var(--accent-ink);white-space:nowrap}
 .item.locked{cursor:default}
 .item.line.locked .hit{cursor:default}
@@ -257,6 +260,7 @@ body.noimages .img-only{display:none !important}
       <div class="handle" data-c="nw"></div><div class="handle" data-c="ne"></div>
       <div class="handle" data-c="sw"></div><div class="handle" data-c="se"></div>
     </div>
+    <div class="gbox" id="gbox" hidden></div>
     <div id="rsel"></div>
     <div id="cursors"></div>
     <div class="lh" id="lh1" data-end="1" hidden></div>
@@ -317,6 +321,8 @@ body.noimages .img-only{display:none !important}
       <div class="seg" id="lineArrow"><button data-a="none" aria-label="矢印なし" title="矢印なし">―</button><button data-a="end" aria-label="片側に矢印" title="片側に矢印">→</button><button data-a="both" aria-label="両側に矢印" title="両側に矢印">↔</button></div>
     </div>
     <div class="sep" id="lineSep"></div>
+    <button class="txtbtn" id="actGroup" title="グループ化（Ctrl+G）">グループ化</button>
+    <button class="txtbtn" id="actUngroup" title="グループ解除（Ctrl+Shift+G）">グループ解除</button>
     <button class="txtbtn" id="actLock">背景に固定</button>
     <button class="txtbtn" id="actArrange" title="選択した画像の高さをそろえて並べます">整列</button>
     <button class="txtbtn" id="actFront" title="前面へ（]）">前面へ</button>
@@ -374,6 +380,7 @@ body.noimages .img-only{display:none !important}
       <dt>付箋</dt><dd><kbd>N</kbd>、ダブルクリックで編集</dd>
       <dt>画像に寄る</dt><dd>画像をダブルクリック</dd>
       <dt>複製</dt><dd><kbd>Ctrl</kbd>+<kbd>D</kbd></dd>
+      <dt>グループ</dt><dd><kbd>Ctrl</kbd>+<kbd>G</kbd>（解除は <kbd>Shift</kbd> も）。もう一度クリックで中の1つを選択</dd>
       <dt>削除</dt><dd><kbd>Delete</kbd>（<kbd>Ctrl</kbd>+<kbd>Z</kbd>で戻す）</dd>
       <dt>重なり順</dt><dd><kbd>]</kbd> 前面へ　<kbd>[</kbd> 背面へ</dd>
     </dl>
@@ -437,8 +444,8 @@ body.noimages .img-only{display:none !important}
    Supabase の「Project URL」と「anon public key」を貼り付けてください。
    空のままなら、GitHub またはこのブラウザだけに保存するモードで動きます。
    ===================================================================== */
-const SUPABASE_URL = 'https://twdckntkvecszdapzgxg.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_JnBbfjxnTnZp3gaZGhlkrQ_ShpRrW2S';
+const SUPABASE_URL = '';
+const SUPABASE_ANON_KEY = '';
 
 (() => {
 'use strict';
@@ -721,6 +728,7 @@ function updateOverlay(){
   if (room){ renderCursors(); renderRemoteSel(); }
   const list = selected();
   lh1.hidden = lh2.hidden = true;
+  $('gbox').hidden = true;
   if (!list.length || editingId){ selbox.hidden = true; return; }
   if (list.length === 1 && list[0].type === 'line'){
     selbox.hidden = true;
@@ -741,6 +749,16 @@ function updateOverlay(){
   selbox.style.height = (b.h * view.s) + 'px';
   selbox.classList.toggle('single', list.length === 1 && !readOnly && !list[0].lk);
   selbox.classList.toggle('locked', list.every(i => i.lk));
+  const g0 = list[0].g, sameGroup = !!g0 && list.every(i => i.g === g0);
+  const groupSize = sameGroup ? [...items.values()].filter(i => i.g === g0).length : 0;
+  selbox.classList.toggle('group', sameGroup && list.length === groupSize && list.length > 1);
+  const gb = $('gbox');
+  if (sameGroup && list.length < groupSize){
+    const r = boundsOf([...items.values()].filter(i => i.g === g0)), pad = 6;
+    gb.hidden = false;
+    gb.style.left = (view.x + r.x * view.s - pad) + 'px'; gb.style.top = (view.y + r.y * view.s - pad) + 'px';
+    gb.style.width = (r.w * view.s + pad*2) + 'px'; gb.style.height = (r.h * view.s + pad*2) + 'px';
+  } else gb.hidden = true;
   selbox.classList.toggle('multi', list.length > 1);
 }
 function updateCtx(){
@@ -775,6 +793,28 @@ function updateCtx(){
     $('lineCtl').style.display = 'none';
   } else ['actFront', 'actBack', 'actDup', 'actDel'].forEach(x => $(x).hidden = false);
   $('actArrange').hidden = allLocked || list.filter(i => (i.type === 'image' || i.type === 'note') && !i.lk).length < 2;
+  const unlocked = list.filter(i => !i.lk), g1 = unlocked.length && unlocked[0].g;
+  $('actGroup').hidden = allLocked || unlocked.length < 2 || (!!g1 && unlocked.every(i => i.g === g1));
+  $('actUngroup').hidden = allLocked || !list.some(i => i.g);
+}
+function withGroups(ids){
+  const out = new Set(ids), gs = new Set();
+  ids.forEach(id => { const it = items.get(id); if (it && it.g) gs.add(it.g); });
+  if (gs.size) items.forEach(i => { if (i.g && gs.has(i.g) && !i.lk) out.add(i.id); });
+  return [...out];
+}
+function groupSel(){
+  if (readOnly) return;
+  const list = selected().filter(i => !i.lk); if (list.length < 2) return;
+  const gid = uid();
+  list.forEach(it => { it.g = gid; markDirty(it.id); });
+  refreshSel(); toast('グループにしました');
+}
+function ungroupSel(){
+  if (readOnly) return;
+  const gs = new Set(selected().filter(i => i.g).map(i => i.g)); if (!gs.size) return;
+  items.forEach(it => { if (it.g && gs.has(it.g)){ it.g = ''; markDirty(it.id); } });
+  refreshSel(); toast('グループを解除しました');
 }
 function toggleLock(){
   const list = selected(); if (!list.length) return;
@@ -848,8 +888,8 @@ function onWriteError(e){
   else if (e && e.name === 'QuotaExceededError') toast('ブラウザの保存容量がいっぱいです');
   else toast('保存できませんでした。もう一度お試しください');
 }
-function clean(it){ const o = cleanBase(it); if (it.lk) o.lk = 1; return o; }
-function sanitize(d){ const o = sanitizeBase(d); o.lk = d.lk ? 1 : 0; if ('color' in o){ const m = migrateColor(o.color, o.type); o.color = m; } return o; }
+function clean(it){ const o = cleanBase(it); if (it.lk) o.lk = 1; if (it.g) o.g = it.g; return o; }
+function sanitize(d){ const o = sanitizeBase(d); o.lk = d.lk ? 1 : 0; o.g = (typeof d.g === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(d.g)) ? d.g : ''; if ('color' in o){ const m = migrateColor(o.color, o.type); o.color = m; } return o; }
 function cleanBase(it){
   const r = n => Math.round(n * 10) / 10;
   if (it.type === 'line'){
@@ -2067,14 +2107,15 @@ function duplicate(){
   if (readOnly) return;
   const list = selected().filter(i => !i.pendingUpload).sort((a,b) => a.z - b.z); if (!list.length) return;
   const off = 24 / view.s; let z = nextZ();
-  const map = new Map(), out = [];
+  const map = new Map(), out = [], gmap = new Map();
+  const ng = gid => { if (!gid) return ''; if (!gmap.has(gid)) gmap.set(gid, uid()); return gmap.get(gid); };
   list.filter(i => i.type !== 'line').forEach(src => {
-    const it = Object.assign({}, src, {id:uid(), x:src.x + off, y:src.y + off, z:z++, lk:0});
+    const it = Object.assign({}, src, {id:uid(), x:src.x + off, y:src.y + off, z:z++, lk:0, g:ng(src.g)});
     items.set(it.id, it); map.set(src.id, it.id); out.push(it);
   });
   list.filter(i => i.type === 'line').forEach(src => {
     const {p1, p2} = lineEnds(src);
-    const it = Object.assign({}, src, {id:uid(), z:z++, x1:p1.x + off, y1:p1.y + off, x2:p2.x + off, y2:p2.y + off, a:map.get(src.a) || '', b:map.get(src.b) || '', lk:0});
+    const it = Object.assign({}, src, {id:uid(), z:z++, x1:p1.x + off, y1:p1.y + off, x2:p2.x + off, y2:p2.y + off, a:map.get(src.a) || '', b:map.get(src.b) || '', lk:0, g:ng(src.g)});
     items.set(it.id, it); out.push(it);
   });
   out.forEach(it => { render(it); markDirty(it.id); });
@@ -2202,9 +2243,9 @@ board.addEventListener('pointerdown', e => {
     const id = itemEl.dataset.id, mod = e.shiftKey || e.metaKey || e.ctrlKey;
     const wasSelected = sel.has(id);
     if (mod){
-      if (wasSelected){ sel.delete(id); refreshSel(); gesture = null; return; }
-      sel.add(id); refreshSel();
-    } else if (!wasSelected) setSel([id]);
+      if (wasSelected){ withGroups([id]).forEach(x => sel.delete(x)); refreshSel(); gesture = null; return; }
+      withGroups([id]).forEach(x => sel.add(x)); refreshSel();
+    } else if (!wasSelected) setSel(withGroups([id]));
     if (readOnly){ gesture = {type:'tap', id}; return; }
     const start = new Map(selected().filter(it => !it.lk).map(it => [it.id, snapOf(it)]));
     gesture = {type:'move', pid:e.pointerId, sx:e.clientX, sy:e.clientY, start, moved:false, id,
@@ -2273,6 +2314,15 @@ window.addEventListener('pointermove', e => {
   } else if (g.type === 'move'){
     if (e.pointerId !== g.pid) return;
     if (!g.moved && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < 3) return;
+    if (!g.moved){
+      g.start.forEach((_, id) => {
+        const l = items.get(id); if (!l || l.type !== 'line') return;
+        const {p1, p2} = lineEnds(l);
+        if (l.a && !g.start.has(l.a)){ l.a = ''; l.x1 = p1.x; l.y1 = p1.y; }
+        if (l.b && !g.start.has(l.b)){ l.b = ''; l.x2 = p2.x; l.y2 = p2.y; }
+        g.start.set(id, snapOf(l));
+      });
+    }
     g.moved = true;
     const dx = (e.clientX - g.sx) / view.s, dy = (e.clientY - g.sy) / view.s, now = Date.now();
     g.start.forEach((p, id) => { const it = items.get(id); if (!it) return; moveFrom(it, p, dx, dy); render(it); touched.set(id, now); });
@@ -2310,7 +2360,8 @@ window.addEventListener('pointermove', e => {
     Object.assign(marqueeEl.style, {left:(x1 - rect.left) + 'px', top:(y1 - rect.top) + 'px', width:(x2 - x1) + 'px', height:(y2 - y1) + 'px'});
     const a = s2w(x1, y1), b = s2w(x2, y2), hits = new Set(g.base);
     items.forEach(it => { if (it.lk) return; const r = geom(it); if (r.x < b.x && r.x + r.w > a.x && r.y < b.y && r.y + r.h > a.y) hits.add(it.id); });
-    if (hits.size !== sel.size || [...hits].some(h => !sel.has(h))){ sel.clear(); hits.forEach(h => sel.add(h)); refreshSel(); }
+    const all = new Set(withGroups([...hits]));
+    if (all.size !== sel.size || [...all].some(h => !sel.has(h))){ sel.clear(); all.forEach(h => sel.add(h)); refreshSel(); }
   } else if (g.type === 'pinch'){
     if (pointers.size < 2) return;
     const [a, b] = [...pointers.values()];
@@ -2440,6 +2491,7 @@ document.addEventListener('keydown', e => {
   if (mod && k === '0'){ e.preventDefault(); setZoom(1); return; }
   if (mod && k.toLowerCase() === 'a'){ e.preventDefault(); setSel([...items.values()].filter(i => !i.lk).map(i => i.id)); return; }
   if (mod && k.toLowerCase() === 'd'){ e.preventDefault(); duplicate(); return; }
+  if (mod && k.toLowerCase() === 'g'){ e.preventDefault(); if (e.shiftKey) ungroupSel(); else groupSel(); return; }
   if (mod && k.toLowerCase() === 'z' && !e.shiftKey){ if (lastDeleted){ e.preventDefault(); undoDelete(); } return; }
   if (mod || e.altKey) return;
   if (e.shiftKey && e.code === 'Digit1'){ e.preventDefault(); fitAll(); return; }
@@ -2501,6 +2553,8 @@ $('actBack').onclick = sendBack;
 $('actDup').onclick = duplicate;
 $('actDel').onclick = removeSelected;
 $('actLock').onclick = toggleLock;
+$('actGroup').onclick = groupSel;
+$('actUngroup').onclick = ungroupSel;
 $('homeBtn').onclick = goHome;
 $('ghSettings').onclick = () => showGhSetup(ghConfig());
 $('joinBtn').onclick = openJoin;
