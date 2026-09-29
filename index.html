@@ -1,0 +1,2800 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>イメージボード</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --canvas:#EFEEEA; --dot:rgba(46,44,40,.16); --panel:#FDFCFA; --ink:#2A2B2E; --muted:#6F6E6B;
+  --line:rgba(42,43,46,.12); --accent:#5E7A96; --accent-ink:#FFFFFF; --hover:rgba(29,30,32,.06);
+  --shadow:0 1px 2px rgba(0,0,0,.07),0 8px 24px rgba(0,0,0,.08);
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --canvas:#1B1B1C; --dot:rgba(236,234,230,.13); --panel:#262627; --ink:#ECEAE6; --muted:#9E9C98;
+    --line:rgba(236,236,234,.12); --accent:#93ABC3; --accent-ink:#1A2430; --hover:rgba(236,236,234,.08);
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px rgba(0,0,0,.35); color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --canvas:#1B1B1C; --dot:rgba(236,234,230,.13); --panel:#262627; --ink:#ECEAE6; --muted:#9E9C98;
+  --line:rgba(236,236,234,.12); --accent:#93ABC3; --accent-ink:#1A2430; --hover:rgba(236,236,234,.08);
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px rgba(0,0,0,.35); color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{height:100%;margin:0;background:var(--canvas);color:var(--ink);overflow:hidden;
+  font-family:"Zen Kaku Gothic New","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Noto Sans JP",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;font-size:14px}
+button{font:inherit;color:inherit}
+#app{position:relative;height:100%;overflow:hidden}
+
+#board{position:absolute;inset:0;background-color:var(--canvas);
+  background-image:radial-gradient(circle at 1px 1px,var(--dot) 1px,transparent 1.3px);
+  touch-action:none;user-select:none;-webkit-user-select:none;cursor:default;outline:none}
+#board.hand{cursor:grab}
+#board.grabbing{cursor:grabbing}
+#board.dropping::after{content:"";position:absolute;inset:10px;border:2px dashed var(--accent);border-radius:16px;pointer-events:none}
+#world{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+
+.item{position:absolute}
+.item.image{background:var(--hover);box-shadow:0 1px 2px rgba(0,0,0,.14)}
+.item.image img{display:block;width:100%;height:100%;object-fit:cover;pointer-events:none;-webkit-user-drag:none}
+.item.pending img{opacity:.5}
+.item.pending::after{content:"";position:absolute;right:calc(10px / var(--z,1));bottom:calc(10px / var(--z,1));
+  width:calc(16px / var(--z,1));height:calc(16px / var(--z,1));border-radius:50%;
+  border:calc(2px / var(--z,1)) solid var(--accent);border-right-color:transparent;animation:spin .8s linear infinite}
+.item.broken img{visibility:hidden}
+.item.broken::before{content:"画像を読み込めません";position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:13px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.item.note{padding:18px;color:#2A2B2E;box-shadow:0 1px 1px rgba(0,0,0,.08),0 10px 20px -10px rgba(0,0,0,.3)}
+.note-text{width:100%;height:100%;overflow:hidden;font-size:18px;line-height:1.6;white-space:pre-wrap;word-break:break-word;outline:none}
+.note-text[contenteditable="true"],.note-text[contenteditable="plaintext-only"]{cursor:text;user-select:text;-webkit-user-select:text}
+#world.multi .item.sel:not(.line):not(.pin){outline:calc(1.5px / var(--z,1)) solid var(--accent);outline-offset:calc(2px / var(--z,1))}
+
+#overlay{position:absolute;inset:0;pointer-events:none}
+.selbox{position:absolute;border:1.5px solid var(--accent);pointer-events:none}
+.selbox.multi{border-style:dashed;border-width:1px}
+.handle{position:absolute;width:12px;height:12px;background:var(--panel);border:1.5px solid var(--accent);border-radius:3px;pointer-events:auto;touch-action:none;display:none}
+.selbox.single .handle{display:block}
+.handle[data-c=nw]{left:-7px;top:-7px;cursor:nwse-resize}
+.handle[data-c=ne]{right:-7px;top:-7px;cursor:nesw-resize}
+.handle[data-c=sw]{left:-7px;bottom:-7px;cursor:nesw-resize}
+.handle[data-c=se]{right:-7px;bottom:-7px;cursor:nwse-resize}
+@media (pointer:coarse){.handle{width:20px;height:20px}.handle[data-c=nw]{left:-11px;top:-11px}.handle[data-c=ne]{right:-11px;top:-11px}.handle[data-c=sw]{left:-11px;bottom:-11px}.handle[data-c=se]{right:-11px;bottom:-11px}}
+#board.draw{cursor:crosshair}
+.item.line{position:absolute;overflow:visible;pointer-events:none}
+.item.line path{fill:none;stroke-linecap:round;stroke-linejoin:round}
+.item.line .hit{stroke:transparent;stroke-width:calc(16px / var(--z,1));pointer-events:stroke;cursor:pointer}
+.item.line .vis,.item.line .head{pointer-events:none}
+.item.line.sel .hit{stroke:color-mix(in srgb,var(--accent) 22%,transparent)}
+.item.target{outline:calc(2px / var(--z,1)) solid var(--accent);outline-offset:calc(3px / var(--z,1))}
+.item.pin{width:0;height:0;overflow:visible}
+.pin-body{position:absolute;left:0;top:0;transform:scale(calc(1 / var(--z,1)));transform-origin:0 0}
+.pin-svg{position:absolute;left:-16px;top:-46px;width:32px;height:48px;overflow:visible;cursor:pointer}
+.item.pin.sel .pin-svg{filter:drop-shadow(0 0 1.2px var(--accent)) drop-shadow(0 0 1.2px var(--accent)) drop-shadow(0 0 1px var(--accent))}
+.item.pin.target .pin-svg{filter:drop-shadow(0 0 2px var(--accent)) drop-shadow(0 0 2px var(--accent))}
+.item.pin.target{outline:none}
+.pin-label{position:absolute;left:18px;top:-44px;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis;
+  background:var(--panel);color:var(--ink);font-size:13px;font-weight:500;line-height:1;padding:6px 9px;border-radius:7px;box-shadow:0 1px 3px rgba(0,0,0,.2);outline:none}
+.pin-label.empty{display:none}
+.pin-label[contenteditable="true"],.pin-label[contenteditable="plaintext-only"]{display:block;min-width:60px;cursor:text;user-select:text;-webkit-user-select:text;text-overflow:clip}
+.selbox.locked{border-style:dashed;border-width:1px}
+.selbox.locked::after{content:"固定中";position:absolute;left:-1px;top:-24px;font-size:11px;line-height:1;padding:5px 7px;border-radius:6px;background:var(--accent);color:var(--accent-ink);white-space:nowrap}
+.item.locked{cursor:default}
+.item.line.locked .hit{cursor:default}
+.rcursor{position:absolute;left:0;top:0;pointer-events:none;transition:transform .09s linear;will-change:transform}
+.rcursor svg{width:18px;height:18px;display:block;filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))}
+.rcursor .rname{position:absolute;left:13px;top:17px;font-size:11px;line-height:1;padding:4px 7px;border-radius:6px;color:#fff;white-space:nowrap;font-weight:500}
+.rsel{position:absolute;border:1.5px solid;border-radius:2px;pointer-events:none}
+.rsel .rtag{position:absolute;left:-1.5px;top:-19px;font-size:10.5px;line-height:1;padding:3px 6px;border-radius:5px 5px 5px 0;color:#fff;white-space:nowrap}
+.avatars{right:12px;top:12px;display:flex;align-items:center;padding:4px 6px 4px 4px;border-radius:999px;gap:8px}
+.avstack{display:flex}
+.avstack img{width:28px;height:28px;border-radius:50%;border:2px solid var(--panel);margin-left:-8px;object-fit:cover;background:var(--hover);display:block}
+.avstack img:first-child{margin-left:0}
+.avatars .avn{font-size:12px;color:var(--muted);padding-right:4px;white-space:nowrap}
+.card .who{position:absolute;right:8px;top:8px;display:flex;padding:3px;background:var(--panel);border-radius:999px;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.card .who img{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--panel);margin-left:-6px;object-fit:cover;display:block}
+.card .who img:first-child{margin-left:0}
+.avi{display:grid;place-items:center;border-radius:50%;color:#fff;font-weight:700;border:2px solid var(--panel);flex:none}
+.avstack .avi{width:28px;height:28px;font-size:12px;margin-left:-8px}
+.avstack .avi:first-child{margin-left:0}
+.card .who .avi{width:22px;height:22px;font-size:10px;margin-left:-6px;border-width:1.5px}
+.card .who .avi:first-child{margin-left:0}
+@media (max-width:640px){ .avatars{top:60px} .avatars .avn{display:none} }
+.lh{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--panel);border:2px solid var(--accent);pointer-events:auto;touch-action:none;cursor:move}
+@media (pointer:coarse){.lh{width:22px;height:22px;margin:-11px 0 0 -11px}}
+.seg{display:flex;gap:2px;background:var(--hover);padding:2px;border-radius:9px}
+.seg button{flex:1;height:30px;border:0;background:transparent;border-radius:7px;cursor:pointer;font-size:13px;padding:0 10px;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--panel);box-shadow:0 1px 2px rgba(0,0,0,.12);font-weight:500}
+.seg button:disabled{opacity:.4;cursor:default}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.ctx .seg button{height:28px;padding:0 8px;flex:none}
+.exportp{right:12px;bottom:62px;width:300px;padding:16px 18px}
+.exportp h2{font-size:14px;margin:0 0 14px;font-weight:700}
+.exportp .row{margin-bottom:12px}
+.exportp .lbl{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+.exportp .primary{width:100%;margin-top:4px}
+.exportp .note{font-size:12px;color:var(--muted);margin:10px 0 0;line-height:1.6}
+.marquee{position:absolute;border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
+
+.panel{position:absolute;background:var(--panel);box-shadow:var(--shadow);border-radius:14px}
+.toolbar{left:12px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:2px;padding:6px}
+.tb{width:40px;height:40px;border:0;background:transparent;border-radius:10px;display:grid;place-items:center;cursor:pointer;padding:0}
+.tb:hover{background:var(--hover)}
+.tb[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.tb:focus-visible,.txtbtn:focus-visible,.sw:focus-visible,.primary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tb svg{width:20px;height:20px}
+.sep{height:1px;background:var(--line);margin:4px 6px}
+.zoom{right:12px;bottom:12px;display:flex;align-items:center;gap:2px;padding:4px}
+.zoom .tb{width:34px;height:34px}
+.zoom .sep{width:1px;height:20px;margin:0 4px}
+.zlabel{min-width:56px;height:34px;border:0;background:transparent;border-radius:8px;cursor:pointer;font-variant-numeric:tabular-nums;font-size:13px}
+.zlabel:hover{background:var(--hover)}
+.status{left:12px;top:12px;padding:7px 12px;border-radius:999px;font-size:12px;color:var(--muted);display:flex;gap:10px;align-items:center}
+.status .count{color:var(--ink);font-weight:500}
+.status .dotst{width:6px;height:6px;border-radius:50%;background:#8C9B80}
+.status[data-state="saving"] .dotst{background:#C4A55B}
+.status[data-state="error"] .dotst{background:#C8834F}
+.status[data-state="ro"] .dotst,.status[data-state="memory"] .dotst{background:var(--muted)}
+
+.ctx{left:50%;top:12px;transform:translateX(-50%);display:flex;align-items:center;gap:2px;padding:4px;border-radius:12px;white-space:nowrap}
+.txtbtn{height:32px;padding:0 10px;border:0;background:transparent;border-radius:8px;cursor:pointer;font-size:13px}
+.txtbtn:hover{background:var(--hover)}
+.txtbtn.danger{color:#A8604A}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .txtbtn.danger{color:#E0A487}}
+.ctx .sep{width:1px;height:20px;margin:0 4px}
+.swatches{display:flex;gap:4px;padding:0 4px}
+.sw{width:20px;height:20px;border-radius:50%;border:1px solid rgba(0,0,0,.18);cursor:pointer;padding:0}
+.sw[aria-pressed="true"]{box-shadow:0 0 0 2px var(--panel),0 0 0 3.5px var(--accent)}
+
+.empty{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;padding:24px}
+.empty-card{pointer-events:auto;max-width:360px;text-align:center;padding:36px 32px;border:1.5px dashed color-mix(in srgb,var(--ink) 28%,transparent);border-radius:20px;background:color-mix(in srgb,var(--canvas) 70%,transparent)}
+.empty-card h1{font-size:20px;font-weight:700;margin:0 0 10px;letter-spacing:.02em}
+.empty-card p{margin:0 0 20px;color:var(--muted);line-height:1.8;font-size:13.5px}
+.primary{height:40px;padding:0 18px;border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);cursor:pointer;font-weight:500}
+.primary:hover{filter:brightness(1.08)}
+.empty-card .sub{margin:16px 0 0;font-size:12px}
+
+.help{right:12px;bottom:62px;width:300px;padding:16px 18px;font-size:13px}
+.help h2{font-size:14px;margin:0 0 10px;font-weight:700}
+.help dl{display:grid;grid-template-columns:auto 1fr;gap:7px 14px;margin:0}
+.help dt{color:var(--muted)}
+.help dd{margin:0}
+kbd{font-family:inherit;font-size:12px;padding:1px 6px;border-radius:5px;border:1px solid var(--line);background:var(--hover)}
+
+.toasts{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;z-index:50}
+.toast{pointer-events:auto;background:var(--ink);color:var(--canvas);padding:10px 14px;border-radius:10px;display:flex;gap:14px;align-items:center;font-size:13px;box-shadow:var(--shadow);animation:tin .18s ease-out}
+.toast button{border:0;background:transparent;color:inherit;font-weight:700;cursor:pointer;text-decoration:underline;text-underline-offset:3px;padding:0}
+@keyframes tin{from{opacity:0;transform:translateY(6px)}}
+@media (prefers-reduced-motion: reduce){.toast{animation:none}.item.pending::after{animation:none}}
+
+.loading{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:13px;background:var(--canvas);z-index:60}
+.status{padding:4px 12px 4px 4px}
+.homebtn{width:30px;height:30px;border:0;background:transparent;border-radius:999px;display:grid;place-items:center;cursor:pointer;color:var(--ink);padding:0}
+.homebtn:hover{background:var(--hover)}
+.homebtn svg{width:18px;height:18px}
+.bname{display:inline-block;border:0;background:transparent;font-size:13px;font-weight:500;color:var(--ink);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:text;padding:4px 6px;border-radius:6px}
+.bname:hover{background:var(--hover)}
+.status .vsep{width:1px;height:16px;background:var(--line)}
+.status .rename-input{width:200px;font-size:13px}
+.homebtn:focus-visible,.bname:focus-visible,.more:focus-visible,.thumb:focus-visible,.newcard:focus-visible,.menuitem:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+#home{position:absolute;inset:0;z-index:30;background:var(--canvas);overflow-y:auto;overflow-x:hidden}
+body.in-board #home{display:none}
+.home-inner{max-width:1180px;margin:0 auto;padding:44px 28px 64px}
+.home-head{display:flex;align-items:baseline;gap:16px;margin-bottom:30px;flex-wrap:wrap}
+.home-head h1{font-size:22px;font-weight:700;margin:0;letter-spacing:.03em}
+.home-sub{color:var(--muted);font-size:12.5px;flex:1}
+.home-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:22px}
+.card{position:relative;background:var(--panel);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 4px 14px rgba(0,0,0,.05);overflow:hidden;transition:transform .15s ease,box-shadow .15s ease}
+.card:hover{transform:translateY(-2px);box-shadow:0 2px 4px rgba(0,0,0,.06),0 12px 26px rgba(0,0,0,.08)}
+.card .thumb{display:block;width:100%;aspect-ratio:16/10;border:0;padding:0;cursor:pointer;background-color:var(--canvas);
+  background-image:radial-gradient(circle at 1px 1px,var(--dot) 1px,transparent 1.3px);background-size:16px 16px;overflow:hidden;border-bottom:1px solid var(--line)}
+.card .thumb img{width:100%;height:100%;object-fit:contain;display:block}
+.card .thumb .ph{display:grid;place-items:center;height:100%;color:var(--muted);font-size:12px}
+.card .meta{display:flex;align-items:center;gap:6px;padding:12px 8px 12px 14px}
+.card .mtext{flex:1;min-width:0}
+.card .name{font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .sub{font-size:12px;color:var(--muted);margin-top:4px;display:flex;gap:10px}
+.card .more{width:32px;height:32px;border:0;background:transparent;border-radius:8px;cursor:pointer;color:var(--muted);display:grid;place-items:center;padding:0}
+.card .more:hover{background:var(--hover);color:var(--ink)}
+.card.busy{opacity:.4;pointer-events:none}
+.newcard{border:1.5px dashed color-mix(in srgb,var(--ink) 24%,transparent);border-radius:14px;background:transparent;cursor:pointer;min-height:190px;
+  display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;color:var(--muted);font-size:14px}
+.newcard:hover{border-color:var(--accent);color:var(--accent)}
+.newcard svg{width:26px;height:26px}
+.home-empty{text-align:center;color:var(--muted);padding:60px 0;font-size:14px}
+.rename-input{font:inherit;font-size:14.5px;font-weight:500;width:100%;border:1.5px solid var(--accent);border-radius:6px;padding:2px 6px;background:var(--panel);color:var(--ink);outline:none}
+.cardmenu{position:fixed;z-index:35;padding:4px;min-width:150px;display:flex;flex-direction:column}
+.menuitem{border:0;background:transparent;text-align:left;padding:9px 12px;border-radius:8px;cursor:pointer;font-size:13px}
+.menuitem:hover{background:var(--hover)}
+.menuitem.danger{color:#A8604A}
+.dialog-back{position:absolute;inset:0;z-index:45;background:rgba(20,20,22,.35);display:grid;place-items:center;padding:20px}
+.panel.dialog{position:relative;max-width:380px;width:100%;padding:22px 22px 18px}
+.dialog h2{font-size:16px;margin:0 0 8px;font-weight:700}
+.dialog p{margin:0 0 20px;color:var(--muted);line-height:1.75;font-size:13.5px}
+.dlg-actions{display:flex;justify-content:flex-end;gap:8px}
+.primary.danger-btn{background:#A8604A;color:#fff}
+.panel.dialog.ghdlg{max-width:460px}
+.fld{display:block;margin:0 0 12px}
+.fld span{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+.fld input{width:100%;height:38px;border:1px solid var(--line);border-radius:9px;padding:0 11px;background:var(--canvas);color:var(--ink);font:inherit;font-size:14px;outline:none}
+.fld input:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+.dialog p.fnote{font-size:12px;margin:0 0 14px;line-height:1.7}
+.dialog p.ferr{color:#A8604A;font-size:13px;margin:0 0 14px}
+.dlg-actions{flex-wrap:wrap}
+.ghbtn{height:34px}
+@media (max-width:640px){ .home-inner{padding:28px 16px 48px} .home-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px} .status #statusText,.status .count{display:none} .bname{max-width:120px} }
+[hidden]{display:none !important}
+body.readonly .edit-only{display:none !important}
+body.noimages .img-only{display:none !important}
+
+@media (max-width:640px){
+  .toolbar{left:50%;top:auto;bottom:12px;transform:translateX(-50%);flex-direction:row}
+  .toolbar .sep{width:1px;height:24px;margin:8px 4px}
+  .zoom{top:12px;bottom:auto}
+  .zoom .fitbtn,.zoom .helpbtn,.zoom .sep{display:none}
+  .ctx{top:auto;bottom:72px}
+  .status{max-width:calc(100% - 200px)}
+  .toasts{bottom:128px}
+  .help{display:none}
+  .exportp{top:62px;bottom:auto;width:auto;left:12px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="board" tabindex="-1" aria-label="ボード"><div id="world"></div></div>
+  <div id="overlay">
+    <div class="selbox" id="selbox" hidden>
+      <div class="handle" data-c="nw"></div><div class="handle" data-c="ne"></div>
+      <div class="handle" data-c="sw"></div><div class="handle" data-c="se"></div>
+    </div>
+    <div id="rsel"></div>
+    <div id="cursors"></div>
+    <div class="lh" id="lh1" data-end="1" hidden></div>
+    <div class="lh" id="lh2" data-end="2" hidden></div>
+    <div class="marquee" id="marquee" hidden></div>
+  </div>
+
+  <div class="empty" id="empty" hidden>
+    <div class="empty-card">
+      <h1>画像を並べはじめましょう</h1>
+      <p class="edit-only">画像をここへドラッグ＆ドロップするか、コピーした画像を貼り付け（Ctrl+V / ⌘V）できます。</p>
+      <p class="ro-only" hidden>このボードにはまだ何もありません。</p>
+      <button class="primary edit-only img-only" id="emptyAdd">画像を追加</button>
+      <p class="sub edit-only">スペース＋ドラッグで移動、Ctrl（⌘）＋ホイールで拡大縮小</p>
+    </div>
+  </div>
+
+  <div class="panel status" id="status" data-state="saved"><button class="homebtn" id="homeBtn" aria-label="ホームに戻る" title="ホームに戻る"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-6.5 8 6.5"/><path d="M6 9.5V19h12V9.5"/></svg></button><span class="bname" id="boardName" role="button" tabindex="0" title="クリックで名前を変更"></span><span class="vsep"></span><span class="dotst"></span><span class="count" id="count">0点</span><span id="statusText">読み込み中</span></div>
+
+  <div class="panel avatars" id="avatars" hidden><div class="avstack" id="avstack"></div><span class="avn" id="avn"></span></div>
+
+  <div class="panel toolbar" role="toolbar" aria-label="ツール">
+    <button class="tb" id="toolSelect" data-tool="select" aria-pressed="true" aria-label="選択（V）" title="選択（V）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M5 3.5l13 7.2-5.8 1.6-2.6 5.7z"/></svg>
+    </button>
+    <button class="tb" id="toolHand" data-tool="hand" aria-pressed="false" aria-label="画面を移動（H）" title="画面を移動（H）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12V6.5a1.5 1.5 0 0 1 3 0V11m0-5.5v-1a1.5 1.5 0 0 1 3 0V11m0-5a1.5 1.5 0 0 1 3 0v6m0-3a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-4.6-2.2L4.6 15.3a1.5 1.5 0 0 1 2.3-1.9L8 14.6"/></svg>
+    </button>
+    <div class="sep edit-only"></div>
+    <button class="tb edit-only img-only" id="toolImage" aria-label="画像を追加" title="画像を追加">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.7"/><path d="M4 17l5-4.5 3.5 3 3-2.5 4.5 4"/></svg>
+    </button>
+    <button class="tb edit-only" id="toolLine" data-tool="line" aria-pressed="false" aria-label="線（L）" title="線（L）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 19L19 5"/></svg>
+    </button>
+    <button class="tb edit-only" id="toolArrow" data-tool="arrow" aria-pressed="false" aria-label="矢印（A）" title="矢印（A）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19L18 6M11 6h7v7"/></svg>
+    </button>
+    <button class="tb edit-only" id="toolPen" data-tool="pen" aria-pressed="false" aria-label="ペン（D）" title="ペン（D）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20c2.5-.4 3.6-1.4 4.4-2.2L19 7.2a2 2 0 0 0-2.8-2.8L5.6 15c-.8.8-1.4 2-1.6 5z"/><path d="M14.5 6l3.5 3.5"/></svg>
+    </button>
+    <button class="tb edit-only" id="toolPin" data-tool="pin" aria-pressed="false" aria-label="ピン（P）" title="ピン（P）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 21s-6.5-6.6-6.5-11.3a6.5 6.5 0 0 1 13 0C18.5 14.4 12 21 12 21z"/><circle cx="12" cy="9.7" r="2.3"/></svg>
+    </button>
+    <button class="tb edit-only" id="toolNote" aria-label="付箋を追加（N）" title="付箋を追加（N）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4.5 4.5h15v10l-5 5h-10z"/><path d="M19.5 14.5h-5v5"/></svg>
+    </button>
+  </div>
+
+  <div class="panel ctx edit-only" id="ctx" hidden>
+    <div class="swatches" id="swatches"></div>
+    <div class="swatches" id="pinSwatches"></div>
+    <button class="txtbtn" id="actLabel">ラベル</button>
+    <div class="sep" id="swSep"></div>
+    <div id="lineCtl" style="display:flex;align-items:center;gap:6px;padding:0 2px">
+      <div class="swatches" id="lineSwatches"></div>
+      <div class="seg" id="lineWidth"><button data-w="2">細</button><button data-w="4">中</button><button data-w="8">太</button></div>
+      <div class="seg" id="lineArrow"><button data-a="none" aria-label="矢印なし" title="矢印なし">―</button><button data-a="end" aria-label="片側に矢印" title="片側に矢印">→</button><button data-a="both" aria-label="両側に矢印" title="両側に矢印">↔</button></div>
+    </div>
+    <div class="sep" id="lineSep"></div>
+    <button class="txtbtn" id="actLock">背景に固定</button>
+    <button class="txtbtn" id="actArrange" title="選択した画像の高さをそろえて並べます">整列</button>
+    <button class="txtbtn" id="actFront" title="前面へ（]）">前面へ</button>
+    <button class="txtbtn" id="actBack" title="背面へ（[）">背面へ</button>
+    <button class="txtbtn" id="actDup" title="複製（Ctrl+D）">複製</button>
+    <button class="txtbtn danger" id="actDel" title="削除（Delete）">削除</button>
+  </div>
+
+  <div class="panel zoom">
+    <button class="tb" id="zOut" aria-label="縮小" title="縮小">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 12h12"/></svg>
+    </button>
+    <button class="zlabel" id="zLabel" title="100%に戻す">100%</button>
+    <button class="tb" id="zIn" aria-label="拡大" title="拡大">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 12h12M12 6v12"/></svg>
+    </button>
+    <div class="sep"></div>
+    <button class="tb" id="exportBtn" aria-label="書き出す（PNG・PDF）" title="書き出す（PNG・PDF）" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/></svg>
+    </button>
+    <button class="tb fitbtn" id="zFit" aria-label="全体を表示（Shift+1）" title="全体を表示（Shift+1）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
+    <button class="tb helpbtn" id="helpBtn" aria-label="操作方法" title="操作方法" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M9.7 9.6a2.4 2.4 0 1 1 3.3 2.2c-.6.3-1 .8-1 1.5v.4"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>
+    </button>
+  </div>
+
+  <div class="panel exportp" id="exportp" hidden>
+    <h2>書き出す</h2>
+    <div class="row"><span class="lbl">形式</span>
+      <div class="seg" id="exFmt"><button data-v="png" aria-pressed="true">PNG画像</button><button data-v="pdf" aria-pressed="false">PDF</button></div></div>
+    <div class="row"><span class="lbl">範囲</span>
+      <div class="seg" id="exScope"><button data-v="all" aria-pressed="true">ボード全体</button><button data-v="sel" aria-pressed="false">選択中のもの</button></div></div>
+    <div class="row"><span class="lbl">背景</span>
+      <div class="seg" id="exBg"><button data-v="board" aria-pressed="true">ボードの色</button><button data-v="white" aria-pressed="false">白</button><button data-v="none" aria-pressed="false">透明</button></div></div>
+    <div class="row" id="exPaperRow" hidden><span class="lbl">用紙</span>
+      <div class="seg" id="exPaper"><button data-v="fit" aria-pressed="true">内容に合わせる</button><button data-v="a4" aria-pressed="false">A4</button><button data-v="a3" aria-pressed="false">A3</button></div></div>
+    <button class="primary" id="exGo">PNGを書き出す</button>
+    <p class="note">画面の2倍の解像度で書き出します。とても広いボードは自動で解像度を下げます。A4・A3は内容の縦横に合わせて向きを選びます。</p>
+  </div>
+
+  <div class="panel help" id="help" hidden>
+    <h2>操作方法</h2>
+    <dl>
+      <dt>画像を追加</dt><dd>ドロップ、貼り付け <kbd>Ctrl</kbd>+<kbd>V</kbd></dd>
+      <dt>画面の移動</dt><dd><kbd>Space</kbd>＋ドラッグ、ホイール</dd>
+      <dt>拡大・縮小</dt><dd><kbd>Ctrl</kbd>＋ホイール、ピンチ</dd>
+      <dt>全体を表示</dt><dd><kbd>Shift</kbd>+<kbd>1</kbd></dd>
+      <dt>範囲選択</dt><dd>空いている所をドラッグ</dd>
+      <dt>線・矢印</dt><dd><kbd>L</kbd> / <kbd>A</kbd>、端を画像に重ねるとつながる</dd>
+      <dt>ピン</dt><dd><kbd>P</kbd>、ダブルクリックでラベル</dd>
+      <dt>ペン</dt><dd><kbd>D</kbd>、ドラッグで自由に描く</dd>
+      <dt>背景に固定</dt><dd>選んで「背景に固定」。クリックで選ぶと解除できます</dd>
+      <dt>付箋</dt><dd><kbd>N</kbd>、ダブルクリックで編集</dd>
+      <dt>画像に寄る</dt><dd>画像をダブルクリック</dd>
+      <dt>複製</dt><dd><kbd>Ctrl</kbd>+<kbd>D</kbd></dd>
+      <dt>削除</dt><dd><kbd>Delete</kbd>（<kbd>Ctrl</kbd>+<kbd>Z</kbd>で戻す）</dd>
+      <dt>重なり順</dt><dd><kbd>]</kbd> 前面へ　<kbd>[</kbd> 背面へ</dd>
+    </dl>
+  </div>
+
+  <div id="home">
+    <div class="home-inner">
+      <div class="home-head"><h1>ボード</h1><div class="home-sub" id="homeSub"></div><button class="txtbtn ghbtn" id="joinBtn" hidden>編集に参加する</button><button class="txtbtn ghbtn" id="ghSettings" hidden>保存先の設定</button><button class="primary edit-only" id="newBoard">新しいボード</button></div>
+      <div class="home-grid" id="homeGrid"></div>
+      <div class="home-empty" id="homeEmpty" hidden>まだボードがありません。</div>
+    </div>
+  </div>
+  <div class="panel cardmenu" id="cardMenu" hidden role="menu">
+    <button class="menuitem" id="cmOpen" role="menuitem">開く</button>
+    <button class="menuitem edit-only" id="cmRename" role="menuitem">名前を変更</button>
+    <button class="menuitem danger edit-only" id="cmDelete" role="menuitem">削除</button>
+  </div>
+  <div class="dialog-back" id="dlg" hidden>
+    <div class="panel dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+      <h2 id="dlgTitle"></h2><p id="dlgText"></p>
+      <div class="dlg-actions"><button class="txtbtn" id="dlgCancel">キャンセル</button><button class="primary danger-btn" id="dlgOk">削除する</button></div>
+    </div>
+  </div>
+
+  <div class="dialog-back" id="ghSetup" hidden>
+    <div class="panel dialog ghdlg" role="dialog" aria-modal="true" aria-labelledby="ghTitle">
+      <h2 id="ghTitle">保存先の設定</h2>
+      <p>GitHub のリポジトリにボードを保存すると、そのリポジトリに書き込める人同士で同じボードを編集できます。</p>
+      <label class="fld"><span>リポジトリ</span><input id="ghRepo" placeholder="ユーザー名/リポジトリ名" autocomplete="off" spellcheck="false"></label>
+      <label class="fld"><span>保存用ブランチ</span><input id="ghBranch" placeholder="board-data" autocomplete="off" spellcheck="false"></label>
+      <label class="fld"><span>アクセストークン</span><input id="ghToken" type="password" placeholder="github_pat_…（見るだけなら空欄）" autocomplete="off" spellcheck="false"></label>
+      <p class="fnote">トークンはこのブラウザの中にだけ保存されます。リポジトリの持ち主は Fine-grained token（このリポジトリの Contents: Read and write）、共同編集者は classic token（public_repo）を使ってください。空欄の場合は、公開リポジトリのボードを見るだけになります。</p>
+      <p class="ferr" id="ghErr" hidden></p>
+      <div class="dlg-actions">
+        <button class="txtbtn" id="ghCancel" hidden>キャンセル</button>
+        <button class="txtbtn" id="ghLocal">このブラウザだけで使う</button>
+        <button class="primary" id="ghConnect">接続する</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="dialog-back" id="joinDlg" hidden>
+    <div class="panel dialog ghdlg" role="dialog" aria-modal="true" aria-labelledby="joinTitle">
+      <h2 id="joinTitle">編集に参加する</h2>
+      <p>ボードの持ち主から受け取った招待コードを入力してください。アカウント登録は必要ありません。</p>
+      <label class="fld"><span>表示名</span><input id="joinName" maxlength="40" placeholder="ほかの人に表示される名前" autocomplete="nickname"></label>
+      <label class="fld"><span>招待コード</span><input id="joinCode" autocomplete="off" spellcheck="false"></label>
+      <p class="ferr" id="joinErr" hidden></p>
+      <div class="dlg-actions"><button class="txtbtn" id="joinCancel">キャンセル</button><button class="primary" id="joinGo">参加する</button></div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <div class="loading" id="loading">ボードを読み込んでいます…</div>
+  <input type="file" id="fileInput" accept="image/*" multiple hidden>
+</div>
+
+<script>
+/* =====================================================================
+   設定：Supabase で共同編集する場合は、下の2行に
+   Supabase の「Project URL」と「anon public key」を貼り付けてください。
+   空のままなら、GitHub またはこのブラウザだけに保存するモードで動きます。
+   ===================================================================== */
+const SUPABASE_URL = '';
+const SUPABASE_ANON_KEY = '';
+
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const board = $('board'), world = $('world'), selbox = $('selbox'), marqueeEl = $('marquee');
+const ctx = $('ctx'), swatchesEl = $('swatches'), zoomLabel = $('zLabel'), fileInput = $('fileInput');
+
+const PALETTE = {blue:'#5E7A96', orange:'#C8834F', sage:'#8C9B80', mustard:'#C4A55B', rose:'#B8837C'};
+const NOTE_COLORS = ['#EADBB2', '#EDCDB3', '#CBD6E1', '#D5DDCD', '#E9D2CE', '#F3F1EC'];
+const LINE_COLORS = ['', PALETTE.blue, PALETTE.orange, PALETTE.sage, PALETTE.mustard, PALETTE.rose];
+const LINE_WIDTHS = [2, 4, 8];
+const PIN_COLORS = [PALETTE.orange, PALETTE.blue, PALETTE.sage, PALETTE.mustard, PALETTE.rose];
+const OLD_COLORS = {
+  '#F5E17A':'#EADBB2', '#F4B7C3':'#E9D2CE', '#A8D2EE':'#CBD6E1', '#BFE2B3':'#D5DDCD', '#FFFFFF':'#F3F1EC', '#D6D6D2':'#F3F1EC',
+  '#D0453A':PALETTE.orange, '#2A46D1':PALETTE.blue, '#2F8F5B':PALETTE.sage, '#8A8C90':'',
+  '#E0483E':PALETTE.orange, '#E8A317':PALETTE.mustard, '#1D1E20':PALETTE.rose
+};
+function migrateColor(c, type){
+  if (typeof c !== 'string') return c;
+  const k = c.toUpperCase();
+  if (!(k in OLD_COLORS)) return c;
+  const v = OLD_COLORS[k];
+  if (type === 'note' && (k === '#FFFFFF' || k === '#D6D6D2')) return '#F3F1EC';
+  if (type === 'pin' && v === '') return PALETTE.rose;
+  if (type === 'note' && !v.startsWith('#') ) return NOTE_COLORS[0];
+  return v;
+}
+const PIN_PATH = 'M16 44C16 44 3.5 28.5 3.5 16a12.5 12.5 0 0 1 25 0C28.5 28.5 16 44 16 44Z';
+let lastPinColor = PIN_COLORS[0];
+const SVGNS = 'http://www.w3.org/2000/svg';
+const lineIds = new Set();
+let lastLine = {color:'', width:4}, targetId = null;
+const lh1 = document.getElementById('lh1'), lh2 = document.getElementById('lh2');
+const items = new Map(), els = new Map(), sel = new Set(), localUrls = new Map(), touched = new Map();
+let view = {x:0, y:0, s:1}, tool = 'select', store = null, readOnly = false, loaded = false;
+let editingId = null, spaceDown = false, gesture = null, lastTap = {id:null, t:0}, lastColor = NOTE_COLORS[0];
+let rect = board.getBoundingClientRect();
+const boards = new Map();
+let currentBoard = null, boardUnsub = null, boardsReady = false, metaDirty = false, thumbDirty = false, metaT = null, thumbT = null;
+
+const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const num = (v, d=0) => (typeof v === 'number' && isFinite(v)) ? v : d;
+
+/* ---------- view ---------- */
+let saveViewT;
+function applyView(){
+  world.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.s})`;
+  world.style.setProperty('--z', view.s);
+  let g = 24 * view.s; while (g < 12) g *= 4;
+  board.style.backgroundSize = `${g}px ${g}px`;
+  board.style.backgroundPosition = `${view.x}px ${view.y}px`;
+  zoomLabel.textContent = Math.round(view.s * 100) + '%';
+  updateOverlay();
+  clearTimeout(saveViewT);
+  saveViewT = setTimeout(() => { try { if (currentBoard) localStorage.setItem('ib-view-' + currentBoard, JSON.stringify(view)); } catch(e){} }, 400);
+}
+function s2w(cx, cy){ return {x:(cx - rect.left - view.x) / view.s, y:(cy - rect.top - view.y) / view.s}; }
+function viewCenter(){ return s2w(rect.left + rect.width/2, rect.top + rect.height/2); }
+function zoomAt(f, cx, cy){
+  const w = s2w(cx, cy), ns = clamp(view.s * f, 0.03, 8);
+  view.s = ns; view.x = cx - rect.left - w.x * ns; view.y = cy - rect.top - w.y * ns; applyView();
+}
+function zoomCenter(f){ zoomAt(f, rect.left + rect.width/2, rect.top + rect.height/2); }
+function setZoom(s){ zoomCenter(s / view.s); }
+function boundsOf(list){
+  if (!list.length) return null;
+  let x1=Infinity, y1=Infinity, x2=-Infinity, y2=-Infinity;
+  for (const g of list){ const i = geom(g); x1=Math.min(x1,i.x); y1=Math.min(y1,i.y); x2=Math.max(x2,i.x+i.w); y2=Math.max(y2,i.y+i.h); }
+  return {x:x1, y:y1, w:x2-x1, h:y2-y1};
+}
+function fitTo(b, maxS){
+  const pad = Math.min(80, rect.width * 0.08), W = rect.width, H = rect.height;
+  const s = clamp(Math.min((W - pad*2) / Math.max(b.w,1), (H - pad*2) / Math.max(b.h,1), maxS), 0.03, 8);
+  view.s = s; view.x = W/2 - (b.x + b.w/2) * s; view.y = H/2 - (b.y + b.h/2) * s; applyView();
+}
+function fitAll(){
+  const b = boundsOf([...items.values()]);
+  if (!b){ view = {x:rect.width/2, y:rect.height/2, s:1}; applyView(); return; }
+  fitTo(b, 1);
+}
+
+/* ---------- line geometry ---------- */
+const center = r => ({x:r.x + r.w/2, y:r.y + r.h/2});
+function edgePoint(r, t){
+  const c = center(r), dx = t.x - c.x, dy = t.y - c.y, gap = 3;
+  if (!dx && !dy) return c;
+  const k = Math.min(dx ? (r.w/2 + gap) / Math.abs(dx) : Infinity, dy ? (r.h/2 + gap) / Math.abs(dy) : Infinity);
+  return {x:c.x + dx*k, y:c.y + dy*k};
+}
+function anchorOf(r){ return r.type === 'pin' ? {x:r.x, y:r.y} : center(r); }
+function lineEnds(it){
+  const A = it.a ? items.get(it.a) : null, B = it.b ? items.get(it.b) : null;
+  const ca = A ? anchorOf(A) : {x:it.x1, y:it.y1}, cb = B ? anchorOf(B) : {x:it.x2, y:it.y2};
+  return {p1:(A && A.type !== 'pin') ? edgePoint(A, cb) : ca, p2:(B && B.type !== 'pin') ? edgePoint(B, ca) : cb};
+}
+function pinBox(it, ps){ return {x:it.x - 16*ps, y:it.y - 46*ps, w:32*ps, h:48*ps}; }
+function geom(it){
+  if (it.type === 'pin') return pinBox(it, 1 / view.s);
+  if (it.type !== 'line') return it;
+  const {p1, p2} = lineEnds(it);
+  return {x:Math.min(p1.x, p2.x), y:Math.min(p1.y, p2.y), w:Math.max(1, Math.abs(p2.x - p1.x)), h:Math.max(1, Math.abs(p2.y - p1.y))};
+}
+function lineGeom(it){
+  const {p1, p2} = lineEnds(it), w = it.width || 4;
+  const L = w*3 + 8, hw = w*1.6 + 4;
+  const dx = p2.x - p1.x, dy = p2.y - p1.y, len = Math.hypot(dx, dy) || 1, ux = dx/len, uy = dy/len;
+  const head = (tip, ex, ey) => { const bx = tip.x - ex*L, by = tip.y - ey*L; return [tip, {x:bx - ey*hw, y:by + ex*hw}, {x:bx + ey*hw, y:by - ex*hw}]; };
+  const heads = []; let s = p1, e = p2;
+  if (it.e && len > L){ heads.push(head(p2, ux, uy)); e = {x:p2.x - ux*L*0.7, y:p2.y - uy*L*0.7}; }
+  if (it.s && len > L){ heads.push(head(p1, -ux, -uy)); s = {x:p1.x + ux*L*0.7, y:p1.y + uy*L*0.7}; }
+  return {p1, p2, s, e, heads, w};
+}
+function itemAt(p, exclude){
+  let best = null;
+  items.forEach(i => {
+    if (i.type === 'line' || i.type === 'draw' || i.lk || i.id === exclude || i.pendingUpload) return;
+    const r = geom(i);
+    if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h && (!best || i.z > best.z)) best = i;
+  });
+  return best;
+}
+function setTarget(id){
+  if (targetId === id) return;
+  if (targetId && els.get(targetId)) els.get(targetId).classList.remove('target');
+  targetId = id;
+  if (id && els.get(id)) els.get(id).classList.add('target');
+}
+function snapOf(it){ return it.type === 'line' ? {x1:it.x1, y1:it.y1, x2:it.x2, y2:it.y2} : {x:it.x, y:it.y}; }
+function moveFrom(it, s, dx, dy){
+  if (it.type === 'line'){ it.x1 = s.x1 + dx; it.y1 = s.y1 + dy; it.x2 = s.x2 + dx; it.y2 = s.y2 + dy; }
+  else { it.x = s.x + dx; it.y = s.y + dy; }
+}
+function dirtyAttached(ids){
+  items.forEach(l => { if (l.type === 'line' && (ids.has(l.a) || ids.has(l.b))) markDirty(l.id); });
+}
+function renderLine(it){
+  let el = els.get(it.id);
+  if (!el){
+    el = document.createElementNS(SVGNS, 'svg');
+    el.setAttribute('class', 'item line'); el.dataset.id = it.id;
+    const g = document.createElementNS(SVGNS, 'g');
+    ['hit', 'vis', 'head'].forEach(c => { const p = document.createElementNS(SVGNS, 'path'); p.setAttribute('class', c); g.appendChild(p); });
+    el.appendChild(g); world.appendChild(el); els.set(it.id, el); lineIds.add(it.id);
+  }
+  const G = lineGeom(it), m = 40 + G.w*3;
+  const x = Math.min(G.p1.x, G.p2.x) - m, y = Math.min(G.p1.y, G.p2.y) - m;
+  const w = Math.abs(G.p2.x - G.p1.x) + m*2, h = Math.abs(G.p2.y - G.p1.y) + m*2;
+  const st = el.style;
+  st.left = x + 'px'; st.top = y + 'px'; st.width = w + 'px'; st.height = h + 'px'; st.zIndex = it.z;
+  const g = el.firstChild, [hit, vis, head] = g.children;
+  g.setAttribute('transform', `translate(${-x} ${-y})`);
+  hit.setAttribute('d', `M${G.p1.x} ${G.p1.y}L${G.p2.x} ${G.p2.y}`);
+  vis.setAttribute('d', `M${G.s.x} ${G.s.y}L${G.e.x} ${G.e.y}`);
+  const col = it.color || 'var(--ink)';
+  vis.style.stroke = col; vis.style.strokeWidth = G.w;
+  head.setAttribute('d', G.heads.map(p => `M${p[0].x} ${p[0].y}L${p[1].x} ${p[1].y}L${p[2].x} ${p[2].y}Z`).join(''));
+  head.style.fill = col; head.style.stroke = col; head.style.strokeWidth = G.w * 0.5;
+  el.classList.toggle('sel', sel.has(it.id));
+}
+
+/* ---------- rendering ---------- */
+function urlFor(it){
+  if (it._url) return it._url;
+  if (!it.asset) return '';
+  if (store && store.kind === 'cloud') return '/_blob/' + it.asset;
+  if (store && store.imageUrl) return store.imageUrl(it.asset);
+  return localUrls.get(it.asset) || '';
+}
+function renderPin(it){
+  let el = els.get(it.id);
+  if (!el){
+    el = document.createElement('div'); el.className = 'item pin'; el.dataset.id = it.id;
+    el.innerHTML = '<div class="pin-body"><svg class="pin-svg" viewBox="0 0 32 48"><ellipse cx="16" cy="45" rx="5" ry="1.8" fill="rgba(0,0,0,.28)"/><path class="pin-fill" d="' + PIN_PATH + '" stroke="#fff" stroke-width="1.6"/><circle cx="16" cy="16" r="4.6" fill="#fff"/></svg><div class="pin-label"></div></div>';
+    world.appendChild(el); els.set(it.id, el);
+  }
+  el.style.left = it.x + 'px'; el.style.top = it.y + 'px'; el.style.zIndex = it.z;
+  el.querySelector('.pin-fill').setAttribute('fill', it.color || PIN_COLORS[0]);
+  const lb = el.querySelector('.pin-label');
+  if (editingId !== it.id){ if (lb.textContent !== (it.text || '')) lb.textContent = it.text || ''; lb.classList.toggle('empty', !it.text); }
+  el.classList.toggle('sel', sel.has(it.id));
+  if (lineIds.size) lineIds.forEach(lid => { const l = items.get(lid); if (l && (l.a === it.id || l.b === it.id)) renderLine(l); });
+}
+function drawPathD(it){
+  const sc = Math.max(it.w, it.h, 1), p = it.pts, n = p.length / 2, f = v => Math.round(v * 100) / 100;
+  const X = i => f(it.x + p[2*i]*sc), Y = i => f(it.y + p[2*i+1]*sc);
+  if (n === 1) return `M${X(0)} ${Y(0)}l0.01 0`;
+  let d = `M${X(0)} ${Y(0)}`;
+  if (n === 2) return d + `L${X(1)} ${Y(1)}`;
+  for (let i = 1; i < n - 1; i++) d += `Q${X(i)} ${Y(i)} ${f((X(i) + X(i+1)) / 2)} ${f((Y(i) + Y(i+1)) / 2)}`;
+  return d + `L${X(n-1)} ${Y(n-1)}`;
+}
+function renderDraw(it){
+  let el = els.get(it.id);
+  if (!el){
+    el = document.createElementNS(SVGNS, 'svg');
+    el.setAttribute('class', 'item line'); el.dataset.id = it.id;
+    const g = document.createElementNS(SVGNS, 'g');
+    ['hit', 'vis'].forEach(c => { const p = document.createElementNS(SVGNS, 'path'); p.setAttribute('class', c); g.appendChild(p); });
+    el.appendChild(g); world.appendChild(el); els.set(it.id, el);
+  }
+  const pad = (it.width || 4) + 24, x = it.x - pad, y = it.y - pad;
+  const st = el.style;
+  st.left = x + 'px'; st.top = y + 'px'; st.width = (it.w + pad*2) + 'px'; st.height = (it.h + pad*2) + 'px'; st.zIndex = it.z;
+  const g = el.firstChild, [hit, vis] = g.children, d = drawPathD(it);
+  g.setAttribute('transform', `translate(${-x} ${-y})`);
+  hit.setAttribute('d', d); vis.setAttribute('d', d);
+  vis.style.stroke = it.color || 'var(--ink)'; vis.style.strokeWidth = it.width || 4;
+  el.classList.toggle('sel', sel.has(it.id));
+}
+function buildDraw(raw, base){
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  raw.forEach(p => { x1 = Math.min(x1, p.x); y1 = Math.min(y1, p.y); x2 = Math.max(x2, p.x); y2 = Math.max(y2, p.y); });
+  const w = x2 - x1, h = y2 - y1, sc = Math.max(w, h, 1), pts = [];
+  raw.forEach(p => pts.push((p.x - x1) / sc, (p.y - y1) / sc));
+  return Object.assign(base, {x:x1, y:y1, w:Math.max(w, 1), h:Math.max(h, 1), pts});
+}
+function simplify(pts, eps){
+  if (pts.length < 3) return pts.slice();
+  const keep = new Uint8Array(pts.length); keep[0] = keep[pts.length - 1] = 1;
+  const stack = [[0, pts.length - 1]];
+  while (stack.length){
+    const [a, b] = stack.pop(); const A = pts[a], B = pts[b];
+    const dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy) || 1;
+    let md = 0, mi = -1;
+    for (let i = a + 1; i < b; i++){ const d = Math.abs(dy * (pts[i].x - A.x) - dx * (pts[i].y - A.y)) / L; if (d > md){ md = d; mi = i; } }
+    if (md > eps && mi > 0){ keep[mi] = 1; stack.push([a, mi], [mi, b]); }
+  }
+  return pts.filter((_, i) => keep[i]);
+}
+function render(it){
+  renderCore(it);
+  const el = els.get(it.id); if (el) el.classList.toggle('locked', !!it.lk);
+}
+function renderCore(it){
+  if (it.type === 'line') return renderLine(it);
+  if (it.type === 'draw') return renderDraw(it);
+  if (it.type === 'pin') return renderPin(it);
+  let el = els.get(it.id);
+  if (!el){
+    el = document.createElement('div');
+    el.className = 'item ' + it.type; el.dataset.id = it.id;
+    if (it.type === 'image'){
+      const img = document.createElement('img');
+      img.alt = ''; img.draggable = false; img.decoding = 'async';
+      img.onerror = () => el.classList.add('broken');
+      img.onload = () => el.classList.remove('broken');
+      el.appendChild(img);
+    } else {
+      const t = document.createElement('div'); t.className = 'note-text'; el.appendChild(t);
+    }
+    world.appendChild(el); els.set(it.id, el);
+  }
+  const st = el.style;
+  st.left = it.x + 'px'; st.top = it.y + 'px'; st.width = it.w + 'px'; st.height = it.h + 'px'; st.zIndex = it.z;
+  if (it.type === 'image'){
+    const u = urlFor(it), img = el.firstChild;
+    if (u && img.dataset.u !== u){ img.dataset.u = u; img.src = u; }
+    el.classList.toggle('pending', !!it.pendingUpload);
+  } else {
+    st.background = it.color || NOTE_COLORS[0];
+    if (editingId !== it.id){ const t = el.firstChild; if (t.textContent !== (it.text || '')) t.textContent = it.text || ''; }
+  }
+  el.classList.toggle('sel', sel.has(it.id));
+  if (lineIds.size) lineIds.forEach(lid => { const l = items.get(lid); if (l && (l.a === it.id || l.b === it.id)) renderLine(l); });
+}
+function unrender(id){ const el = els.get(id); if (el){ el.remove(); els.delete(id); } lineIds.delete(id); if (targetId === id) targetId = null; }
+function nextZ(){ let m = 0; items.forEach(i => { if (i.z > m) m = i.z; }); return m + 1; }
+function selected(){ return [...sel].map(id => items.get(id)).filter(Boolean); }
+
+function setSel(ids){ sel.clear(); ids.forEach(i => sel.add(i)); refreshSel(); }
+function refreshSel(){
+  els.forEach((el, id) => el.classList.toggle('sel', sel.has(id)));
+  world.classList.toggle('multi', sel.size > 1);
+  updateOverlay(); updateCtx();
+  if (room && currentBoard) sendPresence({sel:[...sel].slice(0, 60)});
+}
+function updateOverlay(){
+  if (room){ renderCursors(); renderRemoteSel(); }
+  const list = selected();
+  lh1.hidden = lh2.hidden = true;
+  if (!list.length || editingId){ selbox.hidden = true; return; }
+  if (list.length === 1 && list[0].type === 'line'){
+    selbox.hidden = true;
+    if (!readOnly && !list[0].lk){
+      const {p1, p2} = lineEnds(list[0]);
+      lh1.hidden = lh2.hidden = false;
+      lh1.style.left = (view.x + p1.x*view.s) + 'px'; lh1.style.top = (view.y + p1.y*view.s) + 'px';
+      lh2.style.left = (view.x + p2.x*view.s) + 'px'; lh2.style.top = (view.y + p2.y*view.s) + 'px';
+    }
+    return;
+  }
+  if (list.length === 1 && list[0].type === 'pin'){ selbox.hidden = true; return; }
+  const b = boundsOf(list);
+  selbox.hidden = false;
+  selbox.style.left = (view.x + b.x * view.s) + 'px';
+  selbox.style.top = (view.y + b.y * view.s) + 'px';
+  selbox.style.width = (b.w * view.s) + 'px';
+  selbox.style.height = (b.h * view.s) + 'px';
+  selbox.classList.toggle('single', list.length === 1 && !readOnly && !list[0].lk);
+  selbox.classList.toggle('locked', list.every(i => i.lk));
+  selbox.classList.toggle('multi', list.length > 1);
+}
+function updateCtx(){
+  const list = selected();
+  const show = list.length > 0 && !readOnly && !editingId;
+  ctx.hidden = !show;
+  if (!show) return;
+  const allNotes = list.every(i => i.type === 'note'), allLines = list.every(i => i.type === 'line'), allPins = list.every(i => i.type === 'pin');
+  swatchesEl.hidden = !allNotes; $('swSep').hidden = !allNotes && !allLines && !allPins;
+  $('pinSwatches').hidden = !allPins; $('actLabel').hidden = !(allPins && list.length === 1);
+  if (allPins){ const c = list.length === 1 ? list[0].color : null; $('pinSwatches').querySelectorAll('.sw').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.c === c))); }
+  const allStrokes = list.every(i => i.type === 'line' || i.type === 'draw');
+  $('swSep').hidden = !allNotes && !allStrokes && !allPins;
+  $('lineCtl').style.display = allStrokes ? 'flex' : 'none'; $('lineSep').hidden = true;
+  $('lineArrow').style.display = allLines ? 'flex' : 'none';
+  $('actArrange').hidden = list.filter(i => i.type === 'image' || i.type === 'note').length < 2;
+  if (allStrokes){
+    const one = list.length === 1 ? list[0] : null;
+    $('lineSwatches').querySelectorAll('.sw').forEach(b => b.setAttribute('aria-pressed', String(!!one && b.dataset.c === (one.color || ''))));
+    $('lineWidth').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(!!one && +b.dataset.w === one.width)));
+    const mode = one ? (one.s && one.e ? 'both' : one.e ? 'end' : 'none') : null;
+    $('lineArrow').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.a === mode)));
+  }
+  if (allNotes){
+    const c = list.length === 1 ? list[0].color : null;
+    swatchesEl.querySelectorAll('.sw').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.c === c)));
+  }
+  const allLocked = list.every(i => i.lk);
+  $('actLock').textContent = allLocked ? '固定を解除' : '背景に固定';
+  if (allLocked){
+    [swatchesEl, $('pinSwatches'), $('actLabel'), $('swSep'), $('actArrange'), $('actFront'), $('actBack'), $('actDup'), $('actDel')].forEach(x => x.hidden = true);
+    $('lineCtl').style.display = 'none';
+  } else ['actFront', 'actBack', 'actDup', 'actDel'].forEach(x => $(x).hidden = false);
+  $('actArrange').hidden = allLocked || list.filter(i => (i.type === 'image' || i.type === 'note') && !i.lk).length < 2;
+}
+function toggleLock(){
+  const list = selected(); if (!list.length) return;
+  if (list.every(i => i.lk)){
+    list.forEach(it => { it.lk = 0; render(it); markDirty(it.id); });
+    refreshSel(); toast('固定を解除しました');
+    return;
+  }
+  let m = Infinity; items.forEach(i => { if (i.z < m) m = i.z; });
+  let z = m - 1;
+  list.filter(i => !i.lk).sort((a, b) => b.z - a.z).forEach(it => {
+    it.lk = 1;
+    if (it.type === 'image' || it.type === 'note') it.z = z--;
+    render(it); markDirty(it.id);
+  });
+  setSel([]);
+  toast('背景に固定しました。クリックで選ぶと解除できます');
+}
+function updateEmpty(){
+  $('empty').hidden = !loaded || items.size > 0;
+  document.querySelector('.ro-only').hidden = !readOnly;
+  $('count').textContent = items.size + '点';
+}
+
+/* ---------- persistence ---------- */
+const dirty = new Set(), inflight = new Set(), chains = new Map();
+let flushT = null, lastErr = null, uploadsPending = 0;
+function markDirty(id){
+  if (!store) return;
+  dirty.add(id); touched.set(id, Date.now());
+  metaDirty = true; thumbDirty = true;
+  const gh = store.kind === 'github';
+  clearTimeout(metaT); metaT = setTimeout(updateBoardMeta, gh ? 45000 : 4000);
+  if (!gh){ clearTimeout(thumbT); thumbT = setTimeout(updateThumb, 15000); }
+  setStatus('saving');
+  clearTimeout(flushT); flushT = setTimeout(flush, 350);
+  updateEmpty();
+}
+async function flush(){
+  const ids = [...dirty]; dirty.clear();
+  await Promise.all(ids.map(writeOne));
+  if (!dirty.size && !inflight.size && !uploadsPending) setStatus(lastErr ? 'error' : 'saved');
+}
+function writeOne(id){
+  const prev = chains.get(id) || Promise.resolve();
+  const p = prev.then(async () => {
+    inflight.add(id);
+    try {
+      const it = items.get(id);
+      if (!it) await withRetry(() => store.remove(id));
+      else if (!it.pendingUpload) await withRetry(() => store.save(it));
+      lastErr = null;
+    } catch(e){ lastErr = e; onWriteError(e); }
+    finally { inflight.delete(id); touched.set(id, Date.now()); }
+  });
+  chains.set(id, p);
+  return p;
+}
+async function withRetry(fn){
+  try { return await fn(); }
+  catch(e){
+    if (e && (e.code === 'unavailable' || e.code === 'store_unavailable')){ await sleep(600 + Math.random()*600); return fn(); }
+    throw e;
+  }
+}
+function onWriteError(e){
+  const code = e && e.code;
+  if ((store.kind === 'cloud' || store.kind === 'supabase') && (code === 'invalid_argument' || code === 'not_granted' || code === 'revoked')){
+    setReadOnly(true); toast('このボードは閲覧のみです。変更は保存されません');
+  } else if (code === 'quota_exceeded') toast('保存できる数の上限に達しました');
+  else if (e && e.name === 'QuotaExceededError') toast('ブラウザの保存容量がいっぱいです');
+  else toast('保存できませんでした。もう一度お試しください');
+}
+function clean(it){ const o = cleanBase(it); if (it.lk) o.lk = 1; return o; }
+function sanitize(d){ const o = sanitizeBase(d); o.lk = d.lk ? 1 : 0; if ('color' in o){ const m = migrateColor(o.color, o.type); o.color = m; } return o; }
+function cleanBase(it){
+  const r = n => Math.round(n * 10) / 10;
+  if (it.type === 'line'){
+    const {p1, p2} = lineEnds(it);
+    return {type:'line', x1:r(p1.x), y1:r(p1.y), x2:r(p2.x), y2:r(p2.y), a:items.has(it.a) ? it.a : '', b:items.has(it.b) ? it.b : '',
+            z:Math.round(it.z), color:it.color || '', width:it.width || 4, s:it.s ? 1 : 0, e:it.e ? 1 : 0};
+  }
+  if (it.type === 'draw') return {type:'draw', x:r(it.x), y:r(it.y), w:r(it.w), h:r(it.h), z:Math.round(it.z), color:it.color || '', width:it.width || 4,
+                                  pts:it.pts.map(v => Math.round(v * 10000) / 10000)};
+  if (it.type === 'pin') return {type:'pin', x:r(it.x), y:r(it.y), z:Math.round(it.z), color:it.color || PIN_COLORS[0], text:it.text || ''};
+  const o = {type:it.type, x:r(it.x), y:r(it.y), w:r(it.w), h:r(it.h), z:Math.round(it.z)};
+  if (it.type === 'image') o.asset = it.asset || '';
+  else { o.text = it.text || ''; o.color = it.color || NOTE_COLORS[0]; }
+  return o;
+}
+function sanitizeBase(d){
+  const idOk = v => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v)) ? v : '';
+  if (d.type === 'line'){
+    return {type:'line', x1:num(d.x1), y1:num(d.y1), x2:num(d.x2), y2:num(d.y2), a:idOk(d.a), b:idOk(d.b), z:num(d.z),
+            color:(typeof d.color === 'string' && /^#[0-9a-f]{6}$/i.test(d.color)) ? d.color : '',
+            width:LINE_WIDTHS.includes(d.width) ? d.width : 4, s:d.s ? 1 : 0, e:d.e ? 1 : 0};
+  }
+  if (d.type === 'draw'){
+    let pts = Array.isArray(d.pts) ? d.pts.slice(0, 16000).map(v => num(v)) : [0, 0];
+    if (pts.length % 2 || !pts.length) pts = [0, 0];
+    return {type:'draw', x:num(d.x), y:num(d.y), w:Math.max(1, num(d.w, 1)), h:Math.max(1, num(d.h, 1)), z:num(d.z), pts,
+            color:(typeof d.color === 'string' && /^#[0-9a-f]{6}$/i.test(d.color)) ? d.color : '',
+            width:LINE_WIDTHS.includes(d.width) ? d.width : 4};
+  }
+  if (d.type === 'pin'){
+    return {type:'pin', x:num(d.x), y:num(d.y), z:num(d.z), text:typeof d.text === 'string' ? d.text.slice(0, 200) : '',
+            color:(typeof d.color === 'string' && /^#[0-9a-f]{6}$/i.test(d.color)) ? d.color : PIN_COLORS[0]};
+  }
+  const type = d.type === 'note' ? 'note' : 'image';
+  const o = {type, x:num(d.x), y:num(d.y), w:Math.max(8, num(d.w, 200)), h:Math.max(8, num(d.h, 200)), z:num(d.z)};
+  if (type === 'image') o.asset = (typeof d.asset === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(d.asset)) ? d.asset : '';
+  else {
+    o.text = typeof d.text === 'string' ? d.text.slice(0, 5000) : '';
+    o.color = (typeof d.color === 'string' && /^#[0-9a-f]{6}$/i.test(d.color)) ? d.color : NOTE_COLORS[0];
+  }
+  return o;
+}
+function recentlyLocal(id){ return dirty.has(id) || inflight.has(id) || (Date.now() - (touched.get(id) || 0) < 2000); }
+
+function setStatus(state){
+  const el = $('status'), txt = $('statusText');
+  if (!store) return;
+  let s = state, t;
+  if (readOnly){ s = 'ro'; t = '閲覧のみ'; }
+  else if (store.kind === 'memory'){ s = 'memory'; t = 'このブラウザでは保存できません'; }
+  else if (state === 'saving') t = '保存中…';
+  else if (state === 'error') t = '保存できませんでした';
+  else t = store.kind === 'cloud' ? '保存済み' : store.kind === 'github' ? 'GitHubに保存済み' : store.kind === 'supabase' ? '保存済み' : 'このブラウザに保存済み';
+  el.dataset.state = s; txt.textContent = t;
+}
+function setReadOnly(v){
+  readOnly = v; document.body.classList.toggle('readonly', v);
+  if (v){ stopEditing(); setTool('select'); }
+  updateOverlay(); updateCtx(); updateEmpty(); setStatus('saved');
+  if (!currentBoard && boardsReady) renderHome();
+}
+
+/* local store (IndexedDB) */
+function openIDB(){
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('image-board', 2);
+    r.onupgradeneeded = () => {
+      const d = r.result, has = n => d.objectStoreNames.contains(n);
+      if (!has('items')) d.createObjectStore('items', {keyPath:'id'});
+      if (!has('blobs')) d.createObjectStore('blobs');
+      if (!has('boards')) d.createObjectStore('boards', {keyPath:'id'});
+    };
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+async function makeLocal(){
+  let idb = null;
+  try { idb = await openIDB(); } catch(e){}
+  const os = (n, m) => idb.transaction(n, m).objectStore(n);
+  const req = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+  const mem = {items:new Map(), boards:new Map()};
+  const allItems = async () => idb ? await req(os('items', 'readonly').getAll()) : [...mem.items.values()];
+  const putItem = d => idb ? req(os('items', 'readwrite').put(d)) : (mem.items.set(d.id, d), Promise.resolve());
+  const delItem = id => idb ? req(os('items', 'readwrite').delete(id)) : (mem.items.delete(id), Promise.resolve());
+  const boardOf = d => d.boardId || 'main';
+  return {
+    kind: idb ? 'local' : 'memory',
+    async initBoards(){
+      if (idb){
+        try { (await req(os('boards', 'readonly').getAll())).forEach(d => boards.set(d.id, sanitizeBoard(d.id, d))); }
+        catch(e){ toast('保存データを読み込めませんでした'); }
+      }
+      await migrateLegacy();
+      boardsChanged();
+    },
+    async legacyHasItems(){ return (await allItems()).some(d => !d.boardId); },
+    saveBoard(b){ const d = Object.assign({id:b.id}, cleanBoard(b)); return idb ? req(os('boards', 'readwrite').put(d)) : (mem.boards.set(b.id, d), Promise.resolve()); },
+    async updateBoard(id, patch){ const b = boards.get(id); if (!b) return; Object.assign(b, patch); await this.saveBoard(b); },
+    removeBoard(id){ return idb ? req(os('boards', 'readwrite').delete(id)) : (mem.boards.delete(id), Promise.resolve()); },
+    async deleteBoardItems(bid){
+      for (const d of await allItems()){
+        if (boardOf(d) !== bid) continue;
+        await delItem(d.id);
+        if (d.type === 'image' && d.asset) await this.removeImage(d.asset).catch(() => {});
+      }
+    },
+    openBoard(bid, onFirst){
+      (async () => {
+        try {
+          for (const d of await allItems()){
+            if (boardOf(d) !== bid) continue;
+            if (currentBoard !== bid) return;
+            const it = Object.assign({id:d.id}, sanitize(d));
+            if (it.type === 'image' && it.asset && !localUrls.has(it.asset) && idb){
+              const blob = await req(os('blobs', 'readonly').get(it.asset));
+              if (blob) localUrls.set(it.asset, URL.createObjectURL(blob));
+            }
+            items.set(it.id, it); render(it);
+          }
+        } catch(e){ toast('保存データを読み込めませんでした'); }
+        if (currentBoard === bid) onFirst();
+      })();
+      return () => {};
+    },
+    save(it){ return putItem(Object.assign({id:it.id, boardId:currentBoard}, clean(it))); },
+    remove(id){ return delItem(id); },
+    async putImage(blob){
+      const key = uid();
+      if (idb) await req(os('blobs', 'readwrite').put(blob, key));
+      localUrls.set(key, URL.createObjectURL(blob));
+      return key;
+    },
+    removeImage(key){
+      const u = localUrls.get(key); if (u){ URL.revokeObjectURL(u); localUrls.delete(key); }
+      return idb ? req(os('blobs', 'readwrite').delete(key)) : Promise.resolve();
+    }
+  };
+}
+
+/* cloud store (artifact db + assets) */
+function makeCloud(db, assets){
+  const itemsCol = bid => db.collection(bid === 'main' ? 'items' : `boards/${bid}/items`);
+  const boardsCol = db.collection('boards');
+  return {
+    kind: 'cloud', col: null,
+    initBoards(){
+      let first = true;
+      boardsCol.onSnapshot(snap => {
+        snap.docChanges().forEach(ch => {
+          const id = ch.doc.id;
+          if (ch.type === 'removed'){ if (!pendingBoards.has(id)) boards.delete(id); return; }
+          const d = ch.doc.data(); if (d) boards.set(id, sanitizeBoard(id, d));
+        });
+        if (first){ first = false; migrateLegacy().then(boardsChanged); }
+        else boardsChanged();
+      }, err => {
+        if (first){ first = false; boardsChanged(); }
+        if (err && err.code === 'revoked') setReadOnly(true);
+        else toast('接続が切れました。ページを再読み込みしてください');
+      });
+    },
+    async legacyHasItems(){ const snap = await db.collection('items').limit(1).get(); return !snap.empty; },
+    saveBoard(b){ return boardsCol.doc(b.id).set(cleanBoard(b)); },
+    updateBoard(id, patch){ return boardsCol.doc(id).update(patch); },
+    removeBoard(id){ return boardsCol.doc(id).delete(); },
+    async deleteBoardItems(bid){
+      const col = itemsCol(bid);
+      for (let round = 0; round < 40; round++){
+        const snap = await withRetry(() => col.limit(500).get());
+        if (snap.empty) return;
+        const ids = [];
+        await runPool(snap.docs, 6, async d => {
+          const v = d.data() || {};
+          if (v.type === 'image' && typeof v.asset === 'string' && v.asset) ids.push(v.asset);
+          await withRetry(() => col.doc(d.id).delete());
+        });
+        if (assets) await runPool([...new Set(ids)], 4, a => assets.delete(a));
+      }
+    },
+    openBoard(bid, onFirst){
+      const col = itemsCol(bid); this.col = col;
+      let first = true;
+      return col.onSnapshot(snap => {
+        if (currentBoard !== bid) return;
+        applyRemote(snap);
+        if (first){ first = false; onFirst(); }
+      }, err => {
+        if (first){ first = false; onFirst(); }
+        if (err && err.code === 'revoked') setReadOnly(true);
+        else toast('ボードとの接続が切れました。ページを再読み込みしてください');
+      });
+    },
+    save(it){ return this.col.doc(it.id).set(clean(it)); },
+    remove(id){ return this.col.doc(id).delete(); },
+    async putImage(blob){ const r = await assets.upload(blob, blob.type ? undefined : {type:'image/png'}); return r.id; },
+    removeImage(id){ return assets ? assets.delete(id) : Promise.resolve(); }
+  };
+}
+/* GitHub store (for self-hosting, e.g. GitHub Pages) */
+const GH_KEY = 'ib-github';
+function ghConfig(){ try { return JSON.parse(localStorage.getItem(GH_KEY) || 'null'); } catch(e){ return null; } }
+function b64Bytes(u8){ let out = ''; for (let i = 0; i < u8.length; i += 0x8000) out += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(out); }
+function b64Utf8(str){ return b64Bytes(new TextEncoder().encode(str)); }
+function unb64Utf8(b64){ const bin = atob(String(b64).replace(/\s/g, '')); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return new TextDecoder().decode(u8); }
+function ghHeaders(token, extra){ return Object.assign({'Accept':'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28'}, token ? {'Authorization':'Bearer ' + token} : {}, extra || {}); }
+function ghErr(r){
+  const e = new Error('GitHub ' + r.status); e.status = r.status;
+  e.code = (r.status === 409 || r.status === 422) ? 'conflict' : r.status === 401 ? 'unauthorized'
+    : (r.status === 403 || r.status === 429) ? (r.headers.get('x-ratelimit-remaining') === '0' || r.status === 429 ? 'rate_limited' : 'forbidden')
+    : r.status === 404 ? 'not_found' : 'unavailable';
+  return e;
+}
+async function ghConnect(cfg){
+  const base = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}`, H = ghHeaders(cfg.token);
+  let r;
+  try { r = await fetch(base, {headers:H, cache:'no-store'}); } catch(e){ return {err:'GitHubに接続できませんでした。通信を確認してください'}; }
+  if (r.status === 401) return {err:'トークンが正しくないか、期限が切れています'};
+  if (r.status === 404) return {err:'リポジトリが見つかりません。名前を確認してください（非公開リポジトリにはトークンが必要です）'};
+  if (!r.ok) return {err:`GitHubに接続できませんでした（${r.status}）`};
+  const repo = await r.json();
+  const canWrite = !!(cfg.token && repo.permissions && repo.permissions.push);
+  const br = await fetch(`${base}/branches/${encodeURIComponent(cfg.branch)}`, {headers:H, cache:'no-store'});
+  if (br.status === 404){
+    if (!canWrite) return {err:`ブランチ「${cfg.branch}」が見つかりません`};
+    const ref = await fetch(`${base}/git/ref/heads/${encodeURIComponent(repo.default_branch)}`, {headers:H, cache:'no-store'});
+    if (!ref.ok) return {err:'リポジトリが空のようです。README などのファイルを1つ追加してから接続してください'};
+    const rj = await ref.json();
+    const cr = await fetch(`${base}/git/refs`, {method:'POST', headers:ghHeaders(cfg.token, {'Content-Type':'application/json'}), body:JSON.stringify({ref:'refs/heads/' + cfg.branch, sha:rj.object.sha})});
+    if (!cr.ok) return {err:'保存用ブランチを作成できませんでした'};
+  } else if (!br.ok) return {err:`ブランチを確認できませんでした（${br.status}）`};
+  return {canWrite, isPrivate:!!repo.private};
+}
+function makeGitHub(cfg, canWrite){
+  const {owner, repo, branch, token} = cfg;
+  const base = `https://api.github.com/repos/${owner}/${repo}`;
+  const enc = p => p.split('/').map(encodeURIComponent).join('/');
+  const gh = (path, opts = {}) => fetch(base + path, Object.assign({cache:'no-store'}, opts, {headers:ghHeaders(token, opts.headers)}));
+  const metaPath = id => `data/boards/${id}/meta.json`, itemsPath = id => `data/boards/${id}/items.json`;
+  const imgPath = key => { const m = /^([A-Za-z0-9-]+)_([a-z0-9]+)$/.exec(key); return m ? `data/images/${m[1]}.${m[2]}` : null; };
+  let branchEtag = null, commitSha = null, tree = new Map(), pollT = null, cur = null, q = Promise.resolve();
+  const blobCache = new Map(), metaSha = new Map(), loadingImgs = new Set();
+  const enqueue = fn => { const p = q.then(fn, fn); q = p.catch(() => {}); return p; };
+  async function retry(fn){
+    for (let i = 0; ; i++){
+      try { return await fn(); }
+      catch(e){ if (i >= 4 || !(e.code === 'conflict' || e.code === 'unavailable')) throw e; await sleep(400 * (i + 1) + Math.random() * 400); }
+    }
+  }
+  async function refreshTree(){
+    const r = await gh(`/branches/${encodeURIComponent(branch)}`, {headers:branchEtag ? {'If-None-Match':branchEtag} : {}});
+    if (r.status === 304) return false;
+    if (!r.ok) throw ghErr(r);
+    branchEtag = r.headers.get('ETag');
+    const j = await r.json();
+    if (j.commit.sha === commitSha) return false;
+    const tr = await gh(`/git/trees/${j.commit.commit.tree.sha}?recursive=1`);
+    if (!tr.ok) throw ghErr(tr);
+    const tj = await tr.json(), m = new Map();
+    (tj.tree || []).forEach(e => { if (e.type === 'blob') m.set(e.path, e.sha); });
+    tree = m; commitSha = j.commit.sha;
+    return true;
+  }
+  async function blobText(sha, path){
+    if (blobCache.has(sha)) return blobCache.get(sha);
+    let t;
+    if (token){
+      const r = await gh(`/git/blobs/${sha}`); if (!r.ok) throw ghErr(r);
+      t = unb64Utf8((await r.json()).content);
+    } else {
+      const r = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${commitSha}/${enc(path)}`, {cache:'no-store'});
+      if (!r.ok) throw ghErr(r); t = await r.text();
+    }
+    blobCache.set(sha, t); return t;
+  }
+  async function getFile(path){
+    const r = await gh(`/contents/${enc(path)}?ref=${encodeURIComponent(branch)}`);
+    if (r.status === 404) return null;
+    if (!r.ok) throw ghErr(r);
+    const j = await r.json();
+    const text = j.content ? unb64Utf8(j.content) : await blobText(j.sha, path);
+    tree.set(path, j.sha); return {sha:j.sha, text};
+  }
+  async function putFile(path, content, sha, message, isB64){
+    const body = {message, content:isB64 ? content : b64Utf8(content), branch};
+    if (sha) body.sha = sha;
+    const r = await gh(`/contents/${enc(path)}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    if (!r.ok) throw ghErr(r);
+    const j = await r.json(); tree.set(path, j.content.sha);
+    if (!isB64) blobCache.set(j.content.sha, content);
+    return j.content.sha;
+  }
+  async function delFile(path, message){
+    let sha = tree.get(path);
+    if (!sha){ const f = await getFile(path); if (!f) return; sha = f.sha; }
+    const r = await gh(`/contents/${enc(path)}`, {method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message, sha, branch})});
+    if (r.status === 404) return;
+    if (r.status === 409 || r.status === 422){ tree.delete(path); const f = await getFile(path); if (f) throw ghErr(r); return; }
+    if (!r.ok) throw ghErr(r);
+    tree.delete(path);
+  }
+  function parseItems(text){
+    try { const j = JSON.parse(text); return {items:(j.items && typeof j.items === 'object') ? j.items : {}, tomb:(j.deleted && typeof j.deleted === 'object') ? j.deleted : {}}; }
+    catch(e){ return {items:{}, tomb:{}}; }
+  }
+  function applyState(c, st, sha){
+    c.sha = sha; c.remote = st;
+    const changes = [], known = new Map();
+    for (const [id, d] of Object.entries(st.items)){
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || !d || typeof d !== 'object') continue;
+      if ((st.tomb[id] || 0) >= (d.u || 0) && st.tomb[id]) continue;
+      const js = JSON.stringify(d); known.set(id, js);
+      if (c.known.get(id) !== js) changes.push({type:c.known.has(id) ? 'modified' : 'added', doc:{id, data:() => d}});
+    }
+    c.known.forEach((js, id) => { if (!known.has(id)) changes.push({type:'removed', doc:{id, data:() => JSON.parse(js)}}); });
+    c.known = known;
+    if (changes.length && c === cur && currentBoard === c.bid) applyRemote({docChanges:() => changes});
+  }
+  async function syncBoards(){
+    const seen = new Set();
+    for (const [p, sha] of tree){
+      const m = /^data\/boards\/([A-Za-z0-9_-]{1,64})\/meta\.json$/.exec(p);
+      if (!m) continue;
+      seen.add(m[1]);
+      if (metaSha.get(m[1]) === sha && boards.has(m[1])) continue;
+      try { boards.set(m[1], sanitizeBoard(m[1], JSON.parse(await blobText(sha, p)))); metaSha.set(m[1], sha); } catch(e){}
+    }
+    [...boards.keys()].forEach(id => { if (!seen.has(id) && !pendingBoards.has(id)){ boards.delete(id); metaSha.delete(id); } });
+  }
+  async function syncItems(){
+    const c = cur; if (!c) return;
+    const p = itemsPath(c.bid), sha = tree.get(p);
+    if (!sha || sha === c.sha || c.outbox.size) return;
+    const text = await blobText(sha, p);
+    if (cur === c && !c.outbox.size) applyState(c, parseItems(text), sha);
+  }
+  function scheduleCommit(c){ clearTimeout(c.timer); c.timer = setTimeout(() => commit(c), 2000); }
+  function commit(c){
+    return enqueue(async () => {
+      if (!c.outbox.size) return;
+      const batch = new Map(c.outbox);
+      try {
+        await retry(async () => {
+          const st = c.remote || {items:{}, tomb:{}};
+          const itemsObj = Object.assign({}, st.items), tomb = Object.assign({}, st.tomb);
+          batch.forEach((e, id) => {
+            if (e.del){ tomb[id] = e.del; delete itemsObj[id]; }
+            else if ((e.d.u || 0) >= ((itemsObj[id] && itemsObj[id].u) || 0) && (e.d.u || 0) > (tomb[id] || 0)){ itemsObj[id] = e.d; delete tomb[id]; }
+          });
+          const cutoff = Date.now() - 30 * 86400000;
+          Object.keys(tomb).forEach(id => { if (tomb[id] < cutoff) delete tomb[id]; });
+          const text = JSON.stringify({v:1, items:itemsObj, deleted:tomb});
+          try {
+            const sha = await putFile(itemsPath(c.bid), text, c.sha, `Update board ${c.bid}`);
+            c.sha = sha; c.remote = {items:itemsObj, tomb};
+            c.known = new Map(Object.entries(itemsObj).map(([id, d]) => [id, JSON.stringify(d)]));
+          } catch(e){
+            if (e.code === 'conflict'){
+              const f = await getFile(itemsPath(c.bid));
+              if (f) applyState(c, parseItems(f.text), f.sha); else { c.sha = null; c.remote = null; }
+            }
+            throw e;
+          }
+        });
+        batch.forEach((e, id) => {
+          if (c.outbox.get(id) === e) c.outbox.delete(id);
+          (c.waiters.get(id) || []).forEach(w => w.res()); c.waiters.delete(id);
+        });
+      } catch(err){
+        batch.forEach((e, id) => { (c.waiters.get(id) || []).forEach(w => w.rej(err)); c.waiters.delete(id); });
+      }
+      if (c.outbox.size) scheduleCommit(c);
+    });
+  }
+  function queueItem(id, entry){
+    const c = cur; if (!c) return Promise.resolve();
+    c.outbox.set(id, entry);
+    const p = new Promise((res, rej) => { const l = c.waiters.get(id) || []; l.push({res, rej}); c.waiters.set(id, l); });
+    scheduleCommit(c);
+    return p;
+  }
+  function startPolling(){
+    const tick = async () => {
+      if (!document.hidden){
+        try {
+          if (await refreshTree()){
+            await syncBoards(); boardsChanged(); await syncItems();
+          }
+        } catch(e){ if (e.code === 'rate_limited') toast('GitHubの利用上限に達しました。しばらく待ってから再読み込みしてください'); }
+      }
+      pollT = setTimeout(tick, token ? 10000 : 300000);
+    };
+    pollT = setTimeout(tick, token ? 10000 : 300000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden){ clearTimeout(pollT); tick(); } });
+  }
+  return {
+    kind:'github', canWrite, label:`${owner}/${repo}`,
+    initBoards(){
+      (async () => {
+        try { await refreshTree(); await syncBoards(); }
+        catch(e){ toast(e.code === 'rate_limited' ? 'GitHubの利用上限に達しました。しばらく待ってください' : 'GitHubからボードを読み込めませんでした'); }
+        boardsChanged(); startPolling();
+      })();
+    },
+    async legacyHasItems(){ return false; },
+    saveBoard(b){
+      pendingBoards.add(b.id);
+      return enqueue(() => retry(() => putFile(metaPath(b.id), JSON.stringify(cleanBoard(b)), tree.get(metaPath(b.id)), `Create board: ${b.name}`)))
+        .then(sha => { metaSha.set(b.id, sha); pendingBoards.delete(b.id); }, e => { pendingBoards.delete(b.id); throw e; });
+    },
+    updateBoard(id, patch){
+      const b = boards.get(id); if (!b) return Promise.resolve();
+      Object.assign(b, patch);
+      const p = metaPath(id);
+      return enqueue(() => retry(async () => {
+        try { return await putFile(p, JSON.stringify(cleanBoard(b)), tree.get(p), `Update board: ${b.name}`); }
+        catch(e){ if (e.code === 'conflict'){ const f = await getFile(p); if (!f) tree.delete(p); } throw e; }
+      })).then(sha => metaSha.set(id, sha));
+    },
+    removeBoard(id){ return enqueue(() => retry(() => delFile(metaPath(id), 'Delete board'))).then(() => metaSha.delete(id)); },
+    async deleteBoardItems(bid){
+      const f = await getFile(itemsPath(bid)).catch(() => null);
+      if (!f) return;
+      const st = parseItems(f.text);
+      const keys = [...new Set(Object.values(st.items).filter(d => d && d.type === 'image' && typeof d.asset === 'string').map(d => d.asset))];
+      await enqueue(() => retry(() => delFile(itemsPath(bid), 'Delete board items')));
+      for (const k of keys){ const p = imgPath(k); if (p) await enqueue(() => retry(() => delFile(p, 'Delete image'))).catch(() => {}); }
+    },
+    openBoard(bid, onFirst){
+      const c = {bid, sha:null, remote:null, known:new Map(), outbox:new Map(), waiters:new Map(), timer:null};
+      cur = c;
+      (async () => {
+        try {
+          const p = itemsPath(bid);
+          if (token){ const f = await getFile(p); if (f && cur === c) applyState(c, parseItems(f.text), f.sha); }
+          else if (tree.get(p)){ const sha = tree.get(p); const t = await blobText(sha, p); if (cur === c) applyState(c, parseItems(t), sha); }
+        } catch(e){ toast('ボードを読み込めませんでした'); }
+        if (cur === c) onFirst();
+      })();
+      return () => { if (cur === c) cur = null; };
+    },
+    save(it){ return queueItem(it.id, {d:Object.assign(clean(it), {u:Date.now()})}); },
+    remove(id){ return queueItem(id, {del:Date.now()}); },
+    async putImage(blob){
+      const ext = ({'image/webp':'webp', 'image/jpeg':'jpg', 'image/png':'png', 'image/gif':'gif', 'image/svg+xml':'svg'})[blob.type] || 'png';
+      const id = uid(), key = `${id}_${ext}`;
+      const b64 = b64Bytes(new Uint8Array(await blob.arrayBuffer()));
+      await enqueue(() => retry(() => putFile(`data/images/${id}.${ext}`, b64, null, 'Add image', true)));
+      localUrls.set(key, URL.createObjectURL(blob));
+      return key;
+    },
+    removeImage(key){
+      const u = localUrls.get(key); if (u){ URL.revokeObjectURL(u); localUrls.delete(key); }
+      const p = imgPath(key); if (!p) return Promise.resolve();
+      return enqueue(() => retry(() => delFile(p, 'Delete image')));
+    },
+    imageUrl(key){
+      if (localUrls.has(key)) return localUrls.get(key);
+      const p = imgPath(key); if (!p) return '';
+      if (!token) return `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(branch)}/${enc(p)}`;
+      if (!loadingImgs.has(key)){
+        loadingImgs.add(key);
+        gh(`/contents/${enc(p)}?ref=${encodeURIComponent(branch)}`, {headers:{'Accept':'application/vnd.github.raw'}})
+          .then(r => r.ok ? r.blob() : Promise.reject(ghErr(r)))
+          .then(bl => { localUrls.set(key, URL.createObjectURL(bl)); items.forEach(it => { if (it.asset === key) render(it); }); })
+          .catch(() => { loadingImgs.delete(key); });
+      }
+      return '';
+    }
+  };
+}
+/* Supabase store (collaboration without GitHub accounts) */
+let sb = null;
+function sbErr(error){
+  const e = new Error((error && error.message) || 'Supabase error');
+  const c = String((error && (error.code || error.statusCode || error.status)) || '');
+  e.code = (c === '42501' || c === '403' || /row-level security|permission|Unauthorized/i.test(e.message)) ? 'not_granted'
+    : (c === '413' || /too large|exceeded the maximum/i.test(e.message)) ? 'too_large' : 'unavailable';
+  return e;
+}
+function loadSupabaseLib(){
+  if (window.supabase && window.supabase.createClient) return Promise.resolve();
+  return new Promise((res, rej) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
+    sc.onload = () => (window.supabase && window.supabase.createClient) ? res() : rej(new Error('lib'));
+    sc.onerror = () => rej(new Error('lib'));
+    document.head.appendChild(sc);
+  });
+}
+const rowToBoard = r => sanitizeBoard(r.id, {name:r.name, createdAt:Number(r.created_at), updatedAt:Number(r.updated_at), count:r.count, thumb:r.thumb});
+function makeSupabase(canWrite){
+  const BUCKET = 'board-images';
+  const imgPath = key => { const m = /^([A-Za-z0-9-]+)_([a-z0-9]+)$/.exec(key); return m ? `${m[1]}.${m[2]}` : null; };
+  const pendingImgs = new Map();
+  let cur = null;
+  const ok = ({error, data}) => { if (error) throw sbErr(error); return data; };
+  function onBoardRow(pl){
+    if (pl.eventType === 'DELETE'){ const id = pl.old && pl.old.id; if (id && !pendingBoards.has(id)){ boards.delete(id); boardsChanged(); } return; }
+    if (pl.new && pl.new.id){ boards.set(pl.new.id, rowToBoard(pl.new)); boardsChanged(); }
+  }
+  function onItemRow(pl){
+    const row = pl.eventType === 'DELETE' ? pl.old : pl.new;
+    if (!row || !cur || row.board_id !== cur || currentBoard !== cur || typeof row.id !== 'string') return;
+    if (pl.eventType === 'DELETE') applyRemote({docChanges:() => [{type:'removed', doc:{id:row.id, data:() => ({})}}]});
+    else if (row.data && typeof row.data === 'object') applyRemote({docChanges:() => [{type:'modified', doc:{id:row.id, data:() => row.data}}]});
+  }
+  return {
+    kind:'supabase', canWrite,
+    initBoards(){
+      (async () => {
+        try { ok(await sb.from('boards').select('*')).forEach(r => boards.set(r.id, rowToBoard(r))); }
+        catch(e){ toast('ボードを読み込めませんでした。設定を確認してください'); }
+        boardsChanged();
+        sb.channel('db-changes')
+          .on('postgres_changes', {event:'*', schema:'public', table:'boards'}, onBoardRow)
+          .on('postgres_changes', {event:'*', schema:'public', table:'items'}, onItemRow)
+          .subscribe();
+      })();
+    },
+    async legacyHasItems(){ return false; },
+    async saveBoard(b){
+      pendingBoards.add(b.id);
+      try { ok(await sb.from('boards').upsert({id:b.id, name:b.name, created_at:b.createdAt || Date.now(), updated_at:b.updatedAt || Date.now(), count:b.count || 0, thumb:b.thumb || ''})); }
+      finally { pendingBoards.delete(b.id); }
+    },
+    async updateBoard(id, patch){
+      const b = boards.get(id); if (b) Object.assign(b, patch);
+      const row = {};
+      if ('name' in patch) row.name = patch.name;
+      if ('updatedAt' in patch) row.updated_at = patch.updatedAt;
+      if ('count' in patch) row.count = patch.count;
+      if ('thumb' in patch) row.thumb = patch.thumb;
+      ok(await sb.from('boards').update(row).eq('id', id));
+    },
+    async removeBoard(id){
+      const keys = new Set();
+      for (let from = 0; ; from += 1000){
+        const rows = ok(await sb.from('items').select('data').eq('board_id', id).range(from, from + 999));
+        rows.forEach(r => { if (r.data && r.data.type === 'image' && typeof r.data.asset === 'string') keys.add(r.data.asset); });
+        if (rows.length < 1000) break;
+      }
+      pendingImgs.set(id, [...keys]);
+      ok(await sb.from('boards').delete().eq('id', id));
+    },
+    async deleteBoardItems(id){
+      const paths = (pendingImgs.get(id) || []).map(imgPath).filter(Boolean);
+      pendingImgs.delete(id);
+      for (let i = 0; i < paths.length; i += 100) await sb.storage.from(BUCKET).remove(paths.slice(i, i + 100));
+    },
+    openBoard(bid, onFirst){
+      cur = bid;
+      (async () => {
+        try {
+          for (let from = 0; ; from += 1000){
+            const rows = ok(await sb.from('items').select('id,data').eq('board_id', bid).range(from, from + 999));
+            if (cur !== bid) return;
+            rows.forEach(r => { if (!r.data || typeof r.id !== 'string') return; const it = Object.assign({id:r.id}, sanitize(r.data)); items.set(it.id, it); render(it); });
+            if (rows.length < 1000) break;
+          }
+        } catch(e){ toast('ボードを読み込めませんでした'); }
+        if (cur === bid) onFirst();
+      })();
+      return () => { if (cur === bid) cur = null; };
+    },
+    async save(it){ ok(await sb.from('items').upsert({board_id:currentBoard, id:it.id, data:clean(it)})); },
+    async remove(id){ ok(await sb.from('items').delete().eq('board_id', currentBoard).eq('id', id)); },
+    async putImage(blob){
+      const ext = ({'image/webp':'webp', 'image/jpeg':'jpg', 'image/png':'png', 'image/gif':'gif', 'image/svg+xml':'svg'})[blob.type] || 'png';
+      const id = uid(), key = `${id}_${ext}`;
+      const {error} = await sb.storage.from(BUCKET).upload(`${id}.${ext}`, blob, {contentType:blob.type || 'image/png', cacheControl:'31536000', upsert:false});
+      if (error) throw sbErr(error);
+      localUrls.set(key, URL.createObjectURL(blob));
+      return key;
+    },
+    async removeImage(key){
+      const u = localUrls.get(key); if (u){ URL.revokeObjectURL(u); localUrls.delete(key); }
+      const p = imgPath(key); if (p) await sb.storage.from(BUCKET).remove([p]);
+    },
+    imageUrl(key){
+      if (localUrls.has(key)) return localUrls.get(key);
+      const p = imgPath(key); if (!p) return '';
+      return `${SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/${BUCKET}/${p}`;
+    }
+  };
+}
+function myName(){ try { return localStorage.getItem('ib-name') || ''; } catch(e){ return ''; } }
+function startSupabasePresence(){
+  const myPeer = uid(), state = {}, seenAt = new Map();
+  let prevKeys = new Set();
+  const ch = sb.channel('presence-room', {config:{presence:{key:myPeer}}});
+  const shim = {presence(patch){ Object.assign(state, patch); return ch.track(Object.assign({}, state, {name:myName()})).then(() => {}); }};
+  ch.on('presence', {event:'sync'}, () => {
+    const st = ch.presenceState(), peers = [], keys = new Set(), now = Date.now();
+    for (const [k, arr] of Object.entries(st)){
+      const m = (arr && arr[arr.length - 1]) || {};
+      const meta = {}; for (const [kk, v] of Object.entries(m)) if (kk !== 'presence_ref') meta[kk] = v;
+      const sig = JSON.stringify(meta), prev = seenAt.get(k);
+      const t = (!prev || prev.sig !== sig) ? now : prev.t;
+      seenAt.set(k, {sig, t, meta});
+      keys.add(k);
+      peers.push({peer:k, by:null, isMe:k === myPeer, sameTab:k === myPeer, kind:'viewer', guest:false, presence:seenAt.get(k).meta, updatedAt:t});
+    }
+    const left = [...prevKeys].filter(k => !keys.has(k)).map(k => ({peer:k}));
+    left.forEach(l => seenAt.delete(l.peer));
+    prevKeys = keys;
+    onPeersChange({peers, joined:[], left, updated:[]});
+  });
+  ch.subscribe(status => {
+    if (status === 'SUBSCRIBED'){ room = shim; sendPresence({b:currentBoard, cx:null, cy:null, sel:[], mv:null}); }
+  });
+}
+async function startSupabase(){
+  $('loading').hidden = false; $('loading').textContent = '共有ボードに接続しています…';
+  try { await loadSupabaseLib(); }
+  catch(e){ $('loading').textContent = '共同編集の準備ができませんでした。通信を確認してページを再読み込みしてください'; return; }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {auth:{persistSession:true, autoRefreshToken:true}, realtime:{params:{eventsPerSecond:20}}});
+  let canWrite = false;
+  try {
+    const {data} = await sb.auth.getSession();
+    if (data && data.session){ const r = await sb.rpc('is_member'); canWrite = r.data === true; }
+  } catch(e){}
+  store = makeSupabase(canWrite);
+  presInterval = 120;
+  setReadOnly(!canWrite);
+  $('loading').textContent = 'ボードを読み込んでいます…';
+  store.initBoards();
+  startSupabasePresence();
+}
+function openJoin(){
+  $('joinName').value = myName(); $('joinCode').value = ''; $('joinErr').hidden = true;
+  $('joinDlg').hidden = false; setTimeout(() => $(myName() ? 'joinCode' : 'joinName').focus(), 50);
+}
+async function doJoin(){
+  const name = $('joinName').value.trim(), code = $('joinCode').value.trim();
+  const err = t => { $('joinErr').hidden = false; $('joinErr').textContent = t; };
+  if (!name) return err('表示名を入力してください');
+  if (!code) return err('招待コードを入力してください');
+  const btn = $('joinGo'); btn.disabled = true; btn.textContent = '確認しています…';
+  try {
+    const {data} = await sb.auth.getSession();
+    if (!data || !data.session){
+      const r = await sb.auth.signInAnonymously();
+      if (r.error){ err('参加の準備ができませんでした（持ち主の方に「Anonymous sign-ins」が有効か確認してもらってください）'); return; }
+    }
+    const r = await sb.rpc('join_board', {code, display_name:name});
+    if (r.error){ err('確認できませんでした。もう一度お試しください'); return; }
+    if (r.data !== true){ err('招待コードが違います'); return; }
+    try { localStorage.setItem('ib-name', name); } catch(e){}
+    store.canWrite = true; setReadOnly(false);
+    $('joinDlg').hidden = true;
+    sendPresence({});
+    toast('編集に参加しました');
+  } finally { btn.disabled = false; btn.textContent = '参加する'; }
+}
+function guessGhConfig(){
+  const c = ghConfig();
+  if (c && c.owner) return c;
+  const h = location.hostname;
+  if (h.endsWith('.github.io')){
+    const owner = h.split('.')[0], seg = location.pathname.split('/').filter(Boolean)[0];
+    return {owner, repo:seg && !/\.html?$/.test(seg) ? seg : `${owner}.github.io`, branch:'board-data', token:''};
+  }
+  return {owner:'', repo:'', branch:'board-data', token:''};
+}
+function showGhSetup(cfg, err){
+  const c = cfg || guessGhConfig();
+  $('ghRepo').value = c.owner ? `${c.owner}/${c.repo}` : '';
+  $('ghBranch').value = c.branch || 'board-data';
+  $('ghToken').value = c.token || '';
+  $('ghErr').hidden = !err; $('ghErr').textContent = err || '';
+  $('ghCancel').hidden = !store;
+  $('loading').hidden = true;
+  $('ghSetup').hidden = false;
+  setTimeout(() => $(c.owner ? 'ghToken' : 'ghRepo').focus(), 50);
+}
+async function startGitHub(cfg){
+  $('loading').hidden = false; $('loading').textContent = 'GitHubに接続しています…';
+  const res = await ghConnect(cfg);
+  if (res.err){ showGhSetup(cfg, res.err); return false; }
+  store = makeGitHub(cfg, res.canWrite);
+  if (!res.canWrite) setReadOnly(true);
+  $('loading').textContent = 'ボードを読み込んでいます…';
+  store.initBoards();
+  return true;
+}
+async function runPool(arr, n, fn){
+  let i = 0;
+  await Promise.all(Array.from({length:Math.min(n, arr.length)}, async () => {
+    while (i < arr.length){ const x = arr[i++]; try { await fn(x); } catch(e){} }
+  }));
+}
+function applyRemote(snap){
+  let changed = false;
+  snap.docChanges().forEach(ch => {
+    const id = ch.doc.id;
+    if (recentlyLocal(id)) return;
+    if (ch.type === 'removed'){
+      if (items.has(id)){
+        items.delete(id); unrender(id); sel.delete(id); changed = true;
+        lineIds.forEach(lid => { const l = items.get(lid); if (l && (l.a === id || l.b === id)) renderLine(l); });
+      }
+      return;
+    }
+    const d = ch.doc.data(); if (!d) return;
+    const it = Object.assign(items.get(id) || {id}, sanitize(d));
+    items.set(id, it); render(it); changed = true;
+    const el = els.get(id); if (el && el.style.translate) el.style.translate = '';
+  });
+  if (changed){ refreshSel(); updateEmpty(); }
+}
+
+/* ---------- collaboration (room + user) ---------- */
+let presInterval = 60;
+let room = null, userCap = null, peersNow = [], presT = null, pendingPres = {}, mvSeq = 0, mvClearT = null;
+const profCache = new Map(), prevMv = new Map(), cursorEls = new Map();
+const PEER_COLORS = [PALETTE.blue, PALETTE.orange, PALETTE.sage, PALETTE.mustard, PALETTE.rose];
+function sendPresence(patch){
+  if (!room) return;
+  Object.assign(pendingPres, patch);
+  if (presT) return;
+  presT = setTimeout(() => { presT = null; const p = pendingPres; pendingPres = {}; room.presence(p).catch(() => {}); }, presInterval);
+}
+function hashStr(t){ let h = 0; for (const ch of t) h = (h * 31 + ch.charCodeAt(0)) | 0; return Math.abs(h); }
+function profOf(p){ return (p.by && profCache.get(p.by)) || null; }
+function peerColor(p){ const pr = profOf(p); return (pr && pr.color) || PEER_COLORS[hashStr(p.peer) % PEER_COLORS.length]; }
+function peerName(p){ const pr = profOf(p); const pn = p.presence && typeof p.presence.name === 'string' ? p.presence.name.slice(0, 40) : ''; return (pr && pr.name) || pn || (p.guest ? 'ゲスト' : 'メンバー'); }
+function peerAvatar(p){ const pr = profOf(p); return pr && pr.avatarUrl; }
+function othersIn(bid){ return peersNow.filter(p => !p.isMe && p.kind === 'viewer' && p.presence && p.presence.b === bid); }
+function uniqPeople(list){ const seen = new Set(); return list.filter(p => { const k = p.by || p.peer; if (seen.has(k)) return false; seen.add(k); return true; }); }
+function avatarImg(p, cls){
+  const u = peerAvatar(p);
+  if (!u){
+    const d = document.createElement('span'); d.className = 'avi'; d.style.background = peerColor(p);
+    d.textContent = [...peerName(p)][0] || '?'; d.title = peerName(p);
+    return d;
+  }
+  const img = document.createElement('img'); img.alt = ''; if (cls) img.className = cls;
+  img.src = u; img.title = peerName(p);
+  return img;
+}
+async function initCollab(){
+  if (!window.claude || typeof window.claude.use !== 'function') return;
+  try { [room, userCap] = await Promise.all([window.claude.use('room'), window.claude.use('user')]); } catch(e){}
+  if (userCap && store && store.kind === 'cloud'){
+    try { if (await userCap.can('data.write') === false) setReadOnly(true); } catch(e){}
+  }
+  if (!room) return;
+  room.onPeers(onPeersChange, () => { room = null; peersNow = []; renderPresence(); });
+  sendPresence({b:currentBoard, cx:null, cy:null, sel:[], mv:null});
+}
+function onPeersChange(ch){
+  peersNow = ch.peers.slice();
+  const need = [...new Set(peersNow.map(p => p.by).filter(id => id && !profCache.has(id)))];
+  if (need.length && userCap){
+    need.forEach(id => profCache.set(id, null));
+    userCap.profiles(need).then(ps => { Object.values(ps || {}).forEach(p => { if (p && p.id) profCache.set(p.id, p); }); renderPresence(); }).catch(() => {});
+  }
+  ch.left.forEach(p => clearMv(p.peer));
+  applyRemoteMoves();
+  renderPresence();
+}
+function clearMv(peer){
+  const prev = prevMv.get(peer);
+  if (prev && prev.ids) prev.ids.forEach(id => { const el = els.get(id); if (el) el.style.translate = ''; });
+  prevMv.delete(peer);
+}
+function applyRemoteMoves(){
+  peersNow.forEach(p => {
+    if (p.sameTab) return;
+    const pr = p.presence || {};
+    const mv = (pr.b === currentBoard && pr.mv && typeof pr.mv === 'object') ? pr.mv : null;
+    const prev = prevMv.get(p.peer);
+    if (!mv){ if (prev) clearMv(p.peer); return; }
+    if (prev && prev.n === mv.n) return;
+    if (prev) clearMv(p.peer);
+    const dx = num(mv.dx), dy = num(mv.dy);
+    const ids = Array.isArray(mv.ids) ? mv.ids.filter(id => typeof id === 'string').slice(0, 60) : [];
+    ids.forEach(id => { const el = els.get(id); if (el && !(gesture && gesture.type === 'move' && gesture.start.has(id))) el.style.translate = `${dx}px ${dy}px`; });
+    prevMv.set(p.peer, {n:mv.n, ids});
+  });
+}
+function renderPresence(){
+  if (currentBoard){
+    const others = uniqPeople(othersIn(currentBoard));
+    const box = $('avatars'), stack = $('avstack');
+    box.hidden = !others.length;
+    stack.textContent = '';
+    others.slice(0, 5).forEach(p => stack.appendChild(avatarImg(p)));
+    $('avn').textContent = others.length ? `${others.length}人が参加中` : '';
+    renderCursors(); renderRemoteSel();
+  } else {
+    $('avatars').hidden = true;
+    document.querySelectorAll('#homeGrid .card').forEach(card => {
+      let w = card.querySelector('.who');
+      const ppl = uniqPeople(othersIn(card.dataset.id));
+      if (!ppl.length){ if (w) w.remove(); return; }
+      if (!w){ w = document.createElement('div'); w.className = 'who'; card.appendChild(w); }
+      w.textContent = ''; ppl.slice(0, 4).forEach(p => w.appendChild(avatarImg(p)));
+      w.title = ppl.map(peerName).join('、') + ' が開いています';
+    });
+    renderCursors(); renderRemoteSel();
+  }
+}
+function renderCursors(){
+  const layer = $('cursors'), live = new Set(), now = Date.now();
+  if (currentBoard) othersIn(currentBoard).forEach(p => {
+    const pr = p.presence;
+    if (typeof pr.cx !== 'number' || typeof pr.cy !== 'number' || now - p.updatedAt > 60000) return;
+    live.add(p.peer);
+    let el = cursorEls.get(p.peer);
+    if (!el){
+      el = document.createElement('div'); el.className = 'rcursor';
+      el.innerHTML = '<svg viewBox="0 0 18 18"><path d="M2 1.5l13 6.2-5.6 1.6-2.4 5.6z" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg><span class="rname"></span>';
+      layer.appendChild(el); cursorEls.set(p.peer, el);
+    }
+    const col = peerColor(p);
+    el.querySelector('path').setAttribute('fill', col);
+    const nm = el.querySelector('.rname'); nm.style.background = col; nm.textContent = peerName(p);
+    el.style.transform = `translate(${view.x + pr.cx * view.s}px, ${view.y + pr.cy * view.s}px)`;
+  });
+  cursorEls.forEach((el, k) => { if (!live.has(k)){ el.remove(); cursorEls.delete(k); } });
+}
+function renderRemoteSel(){
+  const layer = $('rsel'); layer.textContent = '';
+  if (!currentBoard) return;
+  othersIn(currentBoard).forEach(p => {
+    const ids = Array.isArray(p.presence.sel) ? p.presence.sel.slice(0, 60) : [];
+    const col = peerColor(p); let first = true;
+    ids.forEach(id => {
+      const it = typeof id === 'string' && items.get(id); if (!it) return;
+      const r = geom(it), pad = 3;
+      const d = document.createElement('div'); d.className = 'rsel'; d.style.borderColor = col;
+      d.style.left = (view.x + r.x * view.s - pad) + 'px'; d.style.top = (view.y + r.y * view.s - pad) + 'px';
+      d.style.width = (r.w * view.s + pad*2) + 'px'; d.style.height = (r.h * view.s + pad*2) + 'px';
+      if (first){ const t = document.createElement('span'); t.className = 'rtag'; t.style.background = col; t.textContent = peerName(p); d.appendChild(t); first = false; }
+      layer.appendChild(d);
+    });
+  });
+}
+board.addEventListener('pointermove', e => {
+  if (!currentBoard || !room) return;
+  const w = s2w(e.clientX, e.clientY);
+  sendPresence({cx:Math.round(w.x), cy:Math.round(w.y)});
+});
+board.addEventListener('pointerleave', () => { if (room && currentBoard) sendPresence({cx:null, cy:null}); });
+
+/* ---------- boards ---------- */
+const pendingBoards = new Set();
+function sanitizeBoard(id, d){
+  return {id,
+    name:(typeof d.name === 'string' && d.name.trim()) ? d.name.slice(0, 80) : '無題のボード',
+    createdAt:num(d.createdAt), updatedAt:num(d.updatedAt), count:Math.max(0, Math.round(num(d.count))),
+    thumb:(typeof d.thumb === 'string' && /^data:image\/(webp|jpeg|png);base64,/.test(d.thumb) && d.thumb.length < 250000) ? d.thumb : ''};
+}
+function cleanBoard(b){ return {name:b.name, createdAt:b.createdAt || Date.now(), updatedAt:b.updatedAt || Date.now(), count:b.count || 0, thumb:b.thumb || ''}; }
+async function migrateLegacy(){
+  if (boards.has('main')) return;
+  try {
+    if (await store.legacyHasItems()){
+      const b = {id:'main', name:'ボード1', createdAt:Date.now(), updatedAt:Date.now(), count:0, thumb:''};
+      boards.set('main', b);
+      store.saveBoard(b).catch(() => {});
+    }
+  } catch(e){}
+}
+function boardsChanged(){
+  if (!boardsReady){ boardsReady = true; $('loading').hidden = true; }
+  if (currentBoard){
+    const b = boards.get(currentBoard);
+    if (b && !$('boardName').querySelector('input')) $('boardName').textContent = b.name;
+  } else if (!$('homeGrid').querySelector('.rename-input') && $('cardMenu').hidden) renderHome();
+}
+function relTime(ts){
+  if (!ts) return '';
+  const d = (Date.now() - ts) / 1000;
+  if (d < 60) return 'たった今';
+  if (d < 3600) return Math.floor(d / 60) + '分前';
+  if (d < 86400) return Math.floor(d / 3600) + '時間前';
+  if (d < 86400 * 7) return Math.floor(d / 86400) + '日前';
+  const t = new Date(ts); return `${t.getFullYear()}/${t.getMonth() + 1}/${t.getDate()}`;
+}
+let menuBoard = null;
+function renderHome(){
+  const grid = $('homeGrid');
+  grid.textContent = '';
+  const list = [...boards.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  $('homeSub').textContent = store && store.kind === 'local' ? 'このブラウザに保存されています' : store && store.kind === 'memory' ? 'このブラウザでは保存できません（閉じると消えます）'
+    : store && store.kind === 'github' ? `GitHub（${store.label}）に保存・${store.canWrite ? '約10秒ごとに同期' : '閲覧のみ'}` : '';
+  $('ghSettings').hidden = !store || store.kind === 'cloud' || store.kind === 'supabase';
+  $('joinBtn').hidden = !(store && store.kind === 'supabase' && readOnly);
+  if (store && store.kind === 'supabase') $('homeSub').textContent = readOnly ? '閲覧中です。招待コードがあれば編集に参加できます' : '共有ボード・変更はすぐにほかの人へ反映されます';
+  $('homeEmpty').hidden = list.length > 0 || !readOnly;
+  if (!readOnly){
+    const nb = document.createElement('button');
+    nb.className = 'newcard';
+    nb.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>新しいボード</span>';
+    nb.onclick = createBoard;
+    grid.appendChild(nb);
+  }
+  list.forEach(b => {
+    const card = document.createElement('div'); card.className = 'card'; card.dataset.id = b.id;
+    const th = document.createElement('button'); th.className = 'thumb'; th.setAttribute('aria-label', b.name + 'を開く');
+    if (b.thumb){ const img = document.createElement('img'); img.alt = ''; img.src = b.thumb; th.appendChild(img); }
+    else { const ph = document.createElement('div'); ph.className = 'ph'; ph.textContent = b.count ? '' : '空のボード'; th.appendChild(ph); }
+    th.onclick = () => openBoard(b.id);
+    const meta = document.createElement('div'); meta.className = 'meta';
+    const mt = document.createElement('div'); mt.className = 'mtext';
+    const nm = document.createElement('div'); nm.className = 'name'; nm.textContent = b.name;
+    const sub = document.createElement('div'); sub.className = 'sub';
+    const s1 = document.createElement('span'); s1.textContent = b.updatedAt ? relTime(b.updatedAt) + 'に更新' : '';
+    const s2 = document.createElement('span'); s2.textContent = b.count + '点';
+    sub.append(s1, s2); mt.append(nm, sub);
+    const more = document.createElement('button'); more.className = 'more'; more.setAttribute('aria-label', 'メニュー'); more.setAttribute('aria-haspopup', 'menu');
+    more.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg>';
+    more.onclick = e => { e.stopPropagation(); openCardMenu(b.id, more); };
+    meta.append(mt, more); card.append(th, meta); grid.appendChild(card);
+  });
+  if (room) renderPresence();
+}
+function openCardMenu(id, anchor){
+  const m = $('cardMenu'); menuBoard = id;
+  m.hidden = false;
+  const r = anchor.getBoundingClientRect(), mw = m.offsetWidth, mh = m.offsetHeight;
+  m.style.left = Math.max(8, Math.min(window.innerWidth - mw - 8, r.right - mw)) + 'px';
+  m.style.top = (r.bottom + mh + 8 > window.innerHeight ? r.top - mh - 4 : r.bottom + 4) + 'px';
+  $('cmOpen').focus();
+}
+function closeCardMenu(){ $('cardMenu').hidden = true; }
+document.addEventListener('pointerdown', e => { if (!$('cardMenu').hidden && !$('cardMenu').contains(e.target) && !e.target.closest('.more')) closeCardMenu(); });
+function inlineRename(host, value, done){
+  const input = document.createElement('input');
+  input.className = 'rename-input'; input.value = value; input.maxLength = 80;
+  const prev = host.textContent; host.textContent = ''; host.appendChild(input);
+  input.focus(); input.select();
+  let finished = false;
+  const finish = ok => {
+    if (finished) return; finished = true;
+    const v = input.value.trim(); input.remove();
+    if (ok && v && v !== value){ host.textContent = v; done(v); } else host.textContent = prev;
+  };
+  input.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter' && !e.isComposing){ e.preventDefault(); finish(true); } else if (e.key === 'Escape') finish(false); });
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('pointerdown', e => e.stopPropagation());
+}
+function renameBoard(id, name){
+  const b = boards.get(id); if (!b) return;
+  b.name = name;
+  store.updateBoard(id, {name}).catch(e => onWriteError(e));
+  if (!currentBoard) renderHome();
+}
+function confirmDialog(title, text, okLabel){
+  return new Promise(res => {
+    $('dlgTitle').textContent = title; $('dlgText').textContent = text; $('dlgOk').textContent = okLabel;
+    const d = $('dlg'); d.hidden = false; $('dlgCancel').focus();
+    const close = v => { d.hidden = true; $('dlgOk').onclick = $('dlgCancel').onclick = null; d.onkeydown = null; res(v); };
+    $('dlgOk').onclick = () => close(true); $('dlgCancel').onclick = () => close(false);
+    d.onkeydown = e => { if (e.key === 'Escape') close(false); };
+    d.onclick = e => { if (e.target === d) close(false); };
+  });
+}
+async function deleteBoard(id){
+  const b = boards.get(id); if (!b) return;
+  const ok = await confirmDialog(`「${b.name}」を削除しますか？`, 'ボード内の画像・付箋・線もすべて削除され、元に戻せません。', '削除する');
+  if (!ok) return;
+  const card = $('homeGrid').querySelector(`.card[data-id="${id}"]`); if (card) card.classList.add('busy');
+  try {
+    await withRetry(() => store.removeBoard(id));
+    boards.delete(id); renderHome();
+    toast('ボードを削除しました');
+    await store.deleteBoardItems(id);
+  } catch(e){ if (card) card.classList.remove('busy'); onWriteError(e); }
+}
+async function createBoard(){
+  if (readOnly) return;
+  let n = boards.size + 1; const names = new Set([...boards.values()].map(b => b.name));
+  while (names.has('ボード' + n)) n++;
+  const b = {id:uid(), name:'ボード' + n, createdAt:Date.now(), updatedAt:Date.now(), count:0, thumb:''};
+  boards.set(b.id, b); pendingBoards.add(b.id);
+  try { await withRetry(() => store.saveBoard(b)); }
+  catch(e){ boards.delete(b.id); pendingBoards.delete(b.id); onWriteError(e); renderHome(); return; }
+  pendingBoards.delete(b.id);
+  openBoard(b.id);
+}
+function resetBoardState(){
+  stopEditing(); gesture = null; pointers.clear();
+  items.clear(); els.clear(); sel.clear(); lineIds.clear(); touched.clear(); targetId = null;
+  world.textContent = ''; loaded = false;
+  metaDirty = thumbDirty = false; clearTimeout(metaT); clearTimeout(thumbT);
+  setTool('select'); toggleHelp(false); toggleExport(false);
+  marqueeEl.hidden = true; board.classList.remove('grabbing', 'dropping');
+  refreshSel(); updateEmpty();
+}
+function openBoard(id){
+  if (!boards.has(id)) return;
+  closeCardMenu();
+  resetBoardState();
+  currentBoard = id;
+  document.body.classList.add('in-board');
+  rect = board.getBoundingClientRect();
+  $('boardName').textContent = boards.get(id).name;
+  $('loading').hidden = false; $('loading').textContent = 'ボードを開いています…';
+  setStatus('saved');
+  boardUnsub = store.openBoard(id, boardLoaded);
+  prevMv.clear(); sendPresence({b:id, cx:null, cy:null, sel:[], mv:null});
+  setTimeout(() => { if (currentBoard === id && !loaded) boardLoaded(); }, 9000);
+}
+let leaving = false;
+async function goHome(){
+  if (!currentBoard || leaving) return;
+  if (uploadsPending){ toast('画像の保存が終わるまでお待ちください'); return; }
+  leaving = true;
+  try {
+    stopEditing();
+    clearTimeout(flushT); await flush();
+    await Promise.all([...chains.values()]); chains.clear();
+    if (lastDeleted){ finalizeDelete(lastDeleted); lastDeleted = null; }
+    clearTimeout(metaT); clearTimeout(thumbT);
+    await updateBoardMeta(); await updateThumb();
+  } finally {
+    if (boardUnsub){ boardUnsub(); boardUnsub = null; }
+    resetBoardState();
+    currentBoard = null; leaving = false;
+    document.body.classList.remove('in-board');
+    prevMv.clear(); sendPresence({b:null, cx:null, cy:null, sel:[], mv:null});
+    renderHome();
+  }
+}
+async function updateBoardMeta(){
+  const bid = currentBoard, b = boards.get(bid);
+  if (!b || readOnly || !metaDirty) return;
+  metaDirty = false;
+  const patch = {updatedAt:Date.now(), count:items.size};
+  Object.assign(b, patch);
+  try { await store.updateBoard(bid, patch); } catch(e){}
+}
+async function updateThumb(){
+  const bid = currentBoard, b = boards.get(bid);
+  if (!b || readOnly || !thumbDirty) return;
+  thumbDirty = false;
+  let thumb = '';
+  const list = [...items.values()].filter(i => !i.pendingUpload);
+  if (list.length){
+    try {
+      const {cv} = await renderCanvas(list, {bg:'board', pinPx:0.5, calcK:bb => Math.min(480 / bb.w, 320 / bb.h, 1)});
+      thumb = cv.toDataURL('image/webp', 0.72);
+      if (!thumb.startsWith('data:image/webp')) thumb = cv.toDataURL('image/jpeg', 0.72);
+      if (thumb.length > 240000) thumb = cv.toDataURL('image/jpeg', 0.5);
+      if (thumb.length > 240000) thumb = '';
+    } catch(e){ return; }
+  }
+  b.thumb = thumb;
+  try { await store.updateBoard(bid, {thumb}); } catch(e){}
+}
+function boardLoaded(){
+  if (loaded) return;
+  loaded = true;
+  $('loading').hidden = true;
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('ib-view-' + currentBoard) || (currentBoard === 'main' ? localStorage.getItem('ib-view') : null) || 'null'); } catch(e){}
+  if (saved && items.size && isFinite(saved.s) && isFinite(saved.x) && isFinite(saved.y)){ view = {x:saved.x, y:saved.y, s:clamp(saved.s, .03, 8)}; applyView(); }
+  else fitAll();
+  updateEmpty(); setStatus('saved');
+  const b = boards.get(currentBoard);
+  if (b && !readOnly){
+    if (b.count !== items.size){ b.count = items.size; store.updateBoard(b.id, {count:items.size}).catch(() => {}); }
+    if (!b.thumb && items.size){ thumbDirty = true; clearTimeout(thumbT); thumbT = setTimeout(updateThumb, 2500); }
+  }
+}
+
+/* ---------- images ---------- */
+function loadImg(blob){
+  return new Promise((res, rej) => {
+    const u = URL.createObjectURL(blob), img = new Image();
+    img.onload = () => { URL.revokeObjectURL(u); res(img); };
+    img.onerror = () => { URL.revokeObjectURL(u); rej(new Error('decode')); };
+    img.src = u;
+  });
+}
+const MAX_EDGE = 2400;
+async function prepareImage(file){
+  const type = file.type;
+  if (type === 'image/gif' || type === 'image/svg+xml'){
+    if (type === 'image/svg+xml' && file.size > 2 * 1024 * 1024) throw new Error('large');
+    if (file.size > 20 * 1024 * 1024) throw new Error('large');
+    const img = await loadImg(file);
+    return {blob:file, w:img.naturalWidth || 300, h:img.naturalHeight || 300};
+  }
+  let src;
+  try { src = await createImageBitmap(file, {imageOrientation:'from-image'}); } catch(e){ src = await loadImg(file); }
+  const w0 = src.width || src.naturalWidth, h0 = src.height || src.naturalHeight;
+  const k = Math.min(1, MAX_EDGE / Math.max(w0, h0));
+  if (k === 1 && ['image/png','image/jpeg','image/webp'].includes(type) && file.size < 6e6){
+    if (src.close) src.close();
+    return {blob:file, w:w0, h:h0};
+  }
+  const w = Math.round(w0 * k), h = Math.round(h0 * k);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').drawImage(src, 0, 0, w, h);
+  if (src.close) src.close();
+  let blob = await new Promise(r => c.toBlob(r, 'image/webp', 0.88));
+  if (!blob || blob.type !== 'image/webp') blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88));
+  return {blob, w, h};
+}
+function uploadErrorMsg(e){
+  const code = e && e.code;
+  if (code === 'too_large' || (e && e.message === 'large')) return '画像が大きすぎます（20MBまで、SVGは2MBまで）';
+  if (code === 'quota_or_state') return 'ボードの保存容量がいっぱいです';
+  if (code === 'unsupported_type') return 'この形式の画像は保存できません';
+  if (code === 'rate_limited') return '少し時間をおいてからもう一度追加してください';
+  if (e && e.name === 'QuotaExceededError') return 'ブラウザの保存容量がいっぱいです';
+  return '画像を保存できませんでした';
+}
+async function addFiles(fileList, at){
+  if (readOnly || !store) return;
+  if (document.body.classList.contains('noimages')){ toast('このボードに画像を追加する権限がありません'); return; }
+  const files = [...fileList].filter(f => (f.type || '').startsWith('image/') || /\.(heic|heif|avif)$/i.test(f.name || ''));
+  if (!files.length){ toast('画像ファイルが見つかりませんでした'); return; }
+  const prepared = [];
+  for (const f of files){
+    try { prepared.push(await prepareImage(f)); }
+    catch(e){ toast(e && e.message === 'large' ? uploadErrorMsg(e) : `${f.name || '画像'} を読み込めませんでした`); }
+  }
+  if (!prepared.length) return;
+
+  const c = at || viewCenter();
+  const L = clamp(300 / view.s, 120, 1600), gap = L * 0.08;
+  const cols = Math.ceil(Math.sqrt(prepared.length));
+  const boxes = []; let x = 0, y = 0, rowH = 0, maxW = 0;
+  prepared.forEach((p, i) => {
+    if (i && i % cols === 0){ x = 0; y += rowH + gap; rowH = 0; }
+    const k = L / Math.max(p.w, p.h), w = p.w * k, h = p.h * k;
+    boxes.push({x, y, w, h}); x += w + gap; rowH = Math.max(rowH, h); maxW = Math.max(maxW, x - gap);
+  });
+  const totalH = y + rowH, ox = c.x - maxW / 2, oy = c.y - totalH / 2;
+  let z = nextZ();
+  const created = prepared.map((p, i) => {
+    const b = boxes[i];
+    const it = {id:uid(), type:'image', x:ox + b.x, y:oy + b.y, w:b.w, h:b.h, z:z++, asset:'', pendingUpload:true, _url:URL.createObjectURL(p.blob)};
+    items.set(it.id, it); render(it);
+    return {it, blob:p.blob};
+  });
+  setSel(created.map(c => c.it.id)); updateEmpty();
+
+  uploadsPending += created.length; setStatus('saving');
+  let idx = 0;
+  const worker = async () => {
+    while (idx < created.length){
+      const {it, blob} = created[idx++];
+      try {
+        const key = await withRetry(() => store.putImage(blob));
+        if (items.get(it.id) === it){ it.asset = key; it.pendingUpload = false; render(it); markDirty(it.id); }
+        else store.removeImage(key).catch(() => {});
+      } catch(e){
+        items.delete(it.id); unrender(it.id); sel.delete(it.id); refreshSel(); updateEmpty();
+        toast(uploadErrorMsg(e));
+        if (e && (e.code === 'not_granted' || e.code === 'capability_disabled')) document.body.classList.add('noimages');
+      } finally {
+        uploadsPending--;
+        if (!uploadsPending && !dirty.size && !inflight.size) setStatus(lastErr ? 'error' : 'saved');
+      }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+}
+
+/* ---------- notes ---------- */
+function addNote(at, text){
+  if (readOnly) return;
+  const c = at || viewCenter(), size = clamp(200 / Math.max(view.s, .5), 160, 800);
+  const it = {id:uid(), type:'note', x:c.x - size/2, y:c.y - size/2, w:size, h:size, z:nextZ(), text:text || '', color:lastColor};
+  items.set(it.id, it); render(it); markDirty(it.id); setSel([it.id]);
+  if (!text) startEditing(it.id);
+}
+function addPin(p){
+  if (readOnly) return;
+  const it = {id:uid(), type:'pin', x:p.x, y:p.y, z:nextZ(), color:lastPinColor, text:''};
+  items.set(it.id, it); render(it); markDirty(it.id); setSel([it.id]); updateEmpty();
+}
+function textEl(it){ const el = els.get(it.id); return el ? (it.type === 'pin' ? el.querySelector('.pin-label') : el.firstChild) : null; }
+function startEditing(id){
+  const it = items.get(id);
+  if (!it || (it.type !== 'note' && it.type !== 'pin') || readOnly) return;
+  if (editingId && editingId !== id) stopEditing();
+  editingId = id;
+  const t = textEl(it);
+  try { t.contentEditable = 'plaintext-only'; } catch(e){}
+  if (t.contentEditable !== 'plaintext-only') t.contentEditable = 'true';
+  t.focus();
+  const r = document.createRange(); r.selectNodeContents(t); r.collapse(false);
+  const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  t.addEventListener('blur', stopEditing, {once:true});
+  updateOverlay(); updateCtx();
+}
+function stopEditing(){
+  if (!editingId) return;
+  const id = editingId; editingId = null;
+  const it = items.get(id), t = it ? textEl(it) : null;
+  if (t){
+    t.contentEditable = 'false';
+    let v = t.innerText.replace(/\n$/, '');
+    if (it.type === 'pin'){ v = v.replace(/\s*\n\s*/g, ' ').trim().slice(0, 200); t.textContent = v; t.classList.toggle('empty', !v); }
+    if (v !== (it.text || '')){ it.text = v; markDirty(id); }
+  }
+  window.getSelection().removeAllRanges();
+  updateOverlay(); updateCtx();
+}
+
+/* ---------- actions ---------- */
+function bringFront(){ let z = nextZ(); selected().sort((a,b) => a.z - b.z).forEach(it => { it.z = z++; render(it); markDirty(it.id); }); }
+function sendBack(){
+  let m = Infinity; items.forEach(i => { if (i.z < m) m = i.z; });
+  let z = m - 1; selected().sort((a,b) => b.z - a.z).forEach(it => { it.z = z--; render(it); markDirty(it.id); });
+}
+function duplicate(){
+  if (readOnly) return;
+  const list = selected().filter(i => !i.pendingUpload).sort((a,b) => a.z - b.z); if (!list.length) return;
+  const off = 24 / view.s; let z = nextZ();
+  const map = new Map(), out = [];
+  list.filter(i => i.type !== 'line').forEach(src => {
+    const it = Object.assign({}, src, {id:uid(), x:src.x + off, y:src.y + off, z:z++, lk:0});
+    items.set(it.id, it); map.set(src.id, it.id); out.push(it);
+  });
+  list.filter(i => i.type === 'line').forEach(src => {
+    const {p1, p2} = lineEnds(src);
+    const it = Object.assign({}, src, {id:uid(), z:z++, x1:p1.x + off, y1:p1.y + off, x2:p2.x + off, y2:p2.y + off, a:map.get(src.a) || '', b:map.get(src.b) || '', lk:0});
+    items.set(it.id, it); out.push(it);
+  });
+  out.forEach(it => { render(it); markDirty(it.id); });
+  setSel(out.map(i => i.id));
+}
+let lastDeleted = null;
+function finalizeDelete(d){
+  clearTimeout(d.timer);
+  const gone = new Set(d.list.filter(i => i.asset).map(i => i.asset));
+  items.forEach(i => gone.delete(i.asset));
+  gone.forEach(a => store.removeImage(a).catch(() => {}));
+}
+function removeSelected(){
+  if (readOnly) return;
+  const all = selected(), list = all.filter(i => !i.lk);
+  if (!list.length){ if (all.length) toast('固定中のものは削除できません。先に固定を解除してください'); return; }
+  if (lastDeleted){ finalizeDelete(lastDeleted); lastDeleted = null; }
+  const ids = new Set(list.map(i => i.id)), detached = [];
+  items.forEach(l => {
+    if (l.type !== 'line' || ids.has(l.id) || !(ids.has(l.a) || ids.has(l.b))) return;
+    const {p1, p2} = lineEnds(l);
+    if (ids.has(l.a)){ l.a = ''; l.x1 = p1.x; l.y1 = p1.y; }
+    if (ids.has(l.b)){ l.b = ''; l.x2 = p2.x; l.y2 = p2.y; }
+    detached.push(l);
+  });
+  list.forEach(it => { items.delete(it.id); unrender(it.id); markDirty(it.id); });
+  detached.forEach(l => { renderLine(l); markDirty(l.id); });
+  sel.clear(); refreshSel(); updateEmpty();
+  const d = {list:list.map(i => Object.assign({}, i))};
+  d.timer = setTimeout(() => { finalizeDelete(d); if (lastDeleted === d) lastDeleted = null; }, 7000);
+  lastDeleted = d;
+  toast(`${list.length}点を削除しました`, {label:'元に戻す', run:undoDelete});
+}
+function undoDelete(){
+  const d = lastDeleted; if (!d) return;
+  clearTimeout(d.timer); lastDeleted = null;
+  d.list.forEach(it => { items.set(it.id, it); render(it); markDirty(it.id); });
+  setSel(d.list.map(i => i.id)); updateEmpty();
+}
+function arrange(){
+  const list = selected().filter(i => (i.type === 'image' || i.type === 'note') && !i.lk); if (list.length < 2) return;
+  const b = boundsOf(list);
+  const imgs = list.filter(i => i.type === 'image');
+  const hs = imgs.map(i => i.h).sort((a,c) => a - c);
+  const H = hs.length ? hs[Math.floor(hs.length / 2)] : 200;
+  const band = H * 0.6;
+  list.sort((a,c) => (Math.round(a.y / band) - Math.round(c.y / band)) || (a.x - c.x));
+  imgs.forEach(i => { const k = H / i.h; i.w *= k; i.h = H; });
+  const cols = Math.ceil(Math.sqrt(list.length)), gap = Math.max(12, H * 0.08);
+  let x = b.x, y = b.y, rowH = 0;
+  list.forEach((it, i) => {
+    if (i && i % cols === 0){ x = b.x; y += rowH + gap; rowH = 0; }
+    it.x = x; it.y = y; x += it.w + gap; rowH = Math.max(rowH, it.h);
+    render(it); markDirty(it.id);
+  });
+  dirtyAttached(new Set(list.map(i => i.id)));
+  updateOverlay();
+}
+function setLineProp(k, v){
+  selected().filter(i => i.type === 'line' || i.type === 'draw').forEach(it => {
+    if (k === 'arrow' && it.type !== 'line') return;
+    if (k === 'arrow'){ it.s = v === 'both' ? 1 : 0; it.e = v === 'none' ? 0 : 1; }
+    else { it[k] = v; lastLine[k] = v; }
+    render(it); markDirty(it.id);
+  });
+  updateCtx(); updateOverlay();
+}
+function setPinColor(c){
+  lastPinColor = c;
+  selected().filter(i => i.type === 'pin').forEach(it => { it.color = c; render(it); markDirty(it.id); });
+  updateCtx();
+}
+function setNoteColor(c){
+  lastColor = c;
+  selected().filter(i => i.type === 'note').forEach(it => { it.color = c; render(it); markDirty(it.id); });
+  updateCtx();
+}
+function nudge(dx, dy){
+  if (readOnly) return;
+  const list = selected().filter(i => !i.lk);
+  list.forEach(it => { moveFrom(it, snapOf(it), dx, dy); render(it); markDirty(it.id); });
+  dirtyAttached(new Set(list.map(i => i.id)));
+  updateOverlay();
+}
+function setTool(t){
+  tool = t;
+  document.querySelectorAll('.toolbar [data-tool]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
+  board.classList.toggle('hand', t === 'hand' || spaceDown);
+  board.classList.toggle('draw', t === 'line' || t === 'arrow' || t === 'pin' || t === 'pen');
+}
+
+/* ---------- pointer ---------- */
+const pointers = new Map();
+board.addEventListener('pointerdown', e => {
+  if (editingId){
+    const ed = els.get(editingId);
+    if (ed && ed.contains(e.target)) return;
+    stopEditing();
+  }
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if (pointers.size === 2){ startPinch(); return; }
+  if (pointers.size > 2) return;
+  if (e.button === 1 || spaceDown || tool === 'hand'){ e.preventDefault(); startPan(e); return; }
+  if (e.button !== 0) return;
+  if (tool === 'pen' && !readOnly){
+    e.preventDefault();
+    const p = s2w(e.clientX, e.clientY);
+    gesture = {type:'pen', pid:e.pointerId, id:uid(), raw:[p], last:{x:e.clientX, y:e.clientY}};
+    setSel([]);
+    renderDraw(buildDraw([p], {id:gesture.id, type:'draw', color:lastLine.color, width:lastLine.width, z:nextZ()}));
+    return;
+  }
+  if ((tool === 'line' || tool === 'arrow') && !readOnly){ e.preventDefault(); startDraw(e); return; }
+  if (tool === 'pin' && !readOnly){ e.preventDefault(); addPin(s2w(e.clientX, e.clientY)); setTool('select'); gesture = null; return; }
+  const itemEl = e.target.closest('.item');
+  const lockedHit = itemEl && items.get(itemEl.dataset.id) && items.get(itemEl.dataset.id).lk && !(e.shiftKey || e.metaKey || e.ctrlKey);
+  if (lockedHit){
+    const lid = itemEl.dataset.id;
+    setSel([]);
+    if (e.pointerType === 'touch'){ startPan(e); gesture.lockedId = lid; return; }
+    gesture = {type:'marquee', sx:e.clientX, sy:e.clientY, base:new Set(), lockedId:lid};
+    return;
+  }
+  if (itemEl){
+    const id = itemEl.dataset.id, mod = e.shiftKey || e.metaKey || e.ctrlKey;
+    const wasSelected = sel.has(id);
+    if (mod){
+      if (wasSelected){ sel.delete(id); refreshSel(); gesture = null; return; }
+      sel.add(id); refreshSel();
+    } else if (!wasSelected) setSel([id]);
+    if (readOnly){ gesture = {type:'tap', id}; return; }
+    const start = new Map(selected().filter(it => !it.lk).map(it => [it.id, snapOf(it)]));
+    gesture = {type:'move', pid:e.pointerId, sx:e.clientX, sy:e.clientY, start, moved:false, id,
+               collapse:(!mod && wasSelected && sel.size > 1) ? id : null};
+    return;
+  }
+  if (e.pointerType === 'touch'){ setSel([]); startPan(e); return; }
+  const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+  if (!additive) setSel([]);
+  gesture = {type:'marquee', sx:e.clientX, sy:e.clientY, base:new Set(sel)};
+});
+selbox.addEventListener('pointerdown', e => {
+  const h = e.target.closest('.handle'); if (!h || readOnly) return;
+  e.stopPropagation(); e.preventDefault();
+  const it = selected()[0]; if (!it) return;
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  gesture = {type:'resize', c:h.dataset.c, id:it.id, x0:it.x, y0:it.y, w0:it.w, h0:it.h};
+});
+function startDraw(e){
+  const p = s2w(e.clientX, e.clientY), t = itemAt(p);
+  const it = {id:uid(), type:'line', x1:p.x, y1:p.y, x2:p.x, y2:p.y, a:t ? t.id : '', b:'', z:nextZ(),
+              color:lastLine.color, width:lastLine.width, s:0, e:tool === 'arrow' ? 1 : 0};
+  items.set(it.id, it); render(it); setSel([]);
+  gesture = {type:'draw', pid:e.pointerId, id:it.id};
+}
+[lh1, lh2].forEach(h => h.addEventListener('pointerdown', e => {
+  if (readOnly) return;
+  e.stopPropagation(); e.preventDefault();
+  const it = selected()[0]; if (!it || it.type !== 'line') return;
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  gesture = {type:'lineEnd', pid:e.pointerId, id:it.id, end:+h.dataset.end};
+}));
+function dragEnd(it, end, cx, cy, shift){
+  let p = s2w(cx, cy);
+  const t = itemAt(p, end === 2 ? it.a : it.b);
+  setTarget(t ? t.id : null);
+  if (t){ if (end === 2) it.b = t.id; else it.a = t.id; }
+  else {
+    if (shift){
+      const {p1, p2} = lineEnds(it), o = end === 2 ? p1 : p2;
+      const step = Math.PI / 12, ang = Math.round(Math.atan2(p.y - o.y, p.x - o.x) / step) * step, d = Math.hypot(p.x - o.x, p.y - o.y);
+      p = {x:o.x + Math.cos(ang)*d, y:o.y + Math.sin(ang)*d};
+    }
+    if (end === 2){ it.b = ''; it.x2 = p.x; it.y2 = p.y; } else { it.a = ''; it.x1 = p.x; it.y1 = p.y; }
+  }
+  render(it); touched.set(it.id, Date.now()); updateOverlay();
+}
+function startPan(e){
+  gesture = {type:'pan', sx:e.clientX, sy:e.clientY, vx:view.x, vy:view.y};
+  board.classList.add('grabbing');
+}
+function startPinch(){
+  if (gesture && gesture.type === 'move' && gesture.moved){ gesture.start.forEach((_, id) => markDirty(id)); dirtyAttached(new Set(gesture.start.keys())); }
+  if (gesture && gesture.type === 'draw'){ items.delete(gesture.id); unrender(gesture.id); setTarget(null); }
+  if (gesture && gesture.type === 'pen') unrender(gesture.id);
+  const [a, b] = [...pointers.values()];
+  const m = {x:(a.x + b.x)/2, y:(a.y + b.y)/2};
+  gesture = {type:'pinch', d0:Math.hypot(a.x - b.x, a.y - b.y) || 1, s0:view.s, w0:s2w(m.x, m.y)};
+}
+window.addEventListener('pointermove', e => {
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  const g = gesture; if (!g) return;
+  if (g.type === 'pan'){
+    if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > 4) g.moved = true;
+    view.x = g.vx + (e.clientX - g.sx); view.y = g.vy + (e.clientY - g.sy); applyView();
+  } else if (g.type === 'move'){
+    if (e.pointerId !== g.pid) return;
+    if (!g.moved && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < 3) return;
+    g.moved = true;
+    const dx = (e.clientX - g.sx) / view.s, dy = (e.clientY - g.sy) / view.s, now = Date.now();
+    g.start.forEach((p, id) => { const it = items.get(id); if (!it) return; moveFrom(it, p, dx, dy); render(it); touched.set(id, now); });
+    if (room){ clearTimeout(mvClearT); sendPresence({mv:{ids:[...g.start.keys()].slice(0, 60), dx:Math.round(dx*10)/10, dy:Math.round(dy*10)/10, n:++mvSeq}}); }
+    updateOverlay();
+  } else if (g.type === 'pen'){
+    if (e.pointerId !== g.pid) return;
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    for (const ev of (evs.length ? evs : [e])){
+      if (Math.hypot(ev.clientX - g.last.x, ev.clientY - g.last.y) < 1.5) continue;
+      g.last = {x:ev.clientX, y:ev.clientY}; g.raw.push(s2w(ev.clientX, ev.clientY));
+    }
+    renderDraw(buildDraw(g.raw, {id:g.id, type:'draw', color:lastLine.color, width:lastLine.width, z:nextZ()}));
+  } else if (g.type === 'draw' || g.type === 'lineEnd'){
+    if (e.pointerId !== g.pid) return;
+    const it = items.get(g.id); if (!it) return;
+    dragEnd(it, g.type === 'draw' ? 2 : g.end, e.clientX, e.clientY, e.shiftKey);
+  } else if (g.type === 'resize'){
+    const it = items.get(g.id); if (!it) return;
+    const p = s2w(e.clientX, e.clientY);
+    const fx = g.c.includes('e') ? 1 : -1, fy = g.c.includes('s') ? 1 : -1;
+    const ax = fx > 0 ? g.x0 : g.x0 + g.w0, ay = fy > 0 ? g.y0 : g.y0 + g.h0;
+    let nw = (p.x - ax) * fx, nh = (p.y - ay) * fy;
+    const min = 24;
+    if (it.type === 'image' || it.type === 'draw' || e.shiftKey){
+      const k = Math.max(nw / g.w0, nh / g.h0, min / (it.type === 'draw' ? Math.max(g.w0, g.h0) : Math.min(g.w0, g.h0)));
+      nw = g.w0 * k; nh = g.h0 * k;
+    } else { nw = Math.max(min, nw); nh = Math.max(min, nh); }
+    it.w = nw; it.h = nh; it.x = fx > 0 ? ax : ax - nw; it.y = fy > 0 ? ay : ay - nh;
+    render(it); touched.set(it.id, Date.now()); updateOverlay();
+  } else if (g.type === 'marquee'){
+    const x1 = Math.min(g.sx, e.clientX), y1 = Math.min(g.sy, e.clientY), x2 = Math.max(g.sx, e.clientX), y2 = Math.max(g.sy, e.clientY);
+    if (x2 - x1 < 3 && y2 - y1 < 3) return;
+    marqueeEl.hidden = false; g.moved = true;
+    Object.assign(marqueeEl.style, {left:(x1 - rect.left) + 'px', top:(y1 - rect.top) + 'px', width:(x2 - x1) + 'px', height:(y2 - y1) + 'px'});
+    const a = s2w(x1, y1), b = s2w(x2, y2), hits = new Set(g.base);
+    items.forEach(it => { if (it.lk) return; const r = geom(it); if (r.x < b.x && r.x + r.w > a.x && r.y < b.y && r.y + r.h > a.y) hits.add(it.id); });
+    if (hits.size !== sel.size || [...hits].some(h => !sel.has(h))){ sel.clear(); hits.forEach(h => sel.add(h)); refreshSel(); }
+  } else if (g.type === 'pinch'){
+    if (pointers.size < 2) return;
+    const [a, b] = [...pointers.values()];
+    const m = {x:(a.x + b.x)/2, y:(a.y + b.y)/2};
+    const ns = clamp(g.s0 * Math.hypot(a.x - b.x, a.y - b.y) / g.d0, 0.03, 8);
+    view.s = ns; view.x = m.x - rect.left - g.w0.x * ns; view.y = m.y - rect.top - g.w0.y * ns; applyView();
+  }
+});
+function endPointer(e){
+  pointers.delete(e.pointerId);
+  const g = gesture; if (!g) return;
+  if (g.type === 'pinch'){
+    if (!pointers.size) gesture = null;
+    else { const [p] = [...pointers.values()]; gesture = {type:'pan', sx:p.x, sy:p.y, vx:view.x, vy:view.y}; }
+    return;
+  }
+  if (g.type === 'pan'){
+    board.classList.remove('grabbing');
+    if (g.lockedId && !g.moved){ setSel([g.lockedId]); handleTap(g.lockedId); }
+  }
+  if (g.type === 'pen'){
+    if (e.pointerId !== g.pid) return;
+    const pts = simplify(g.raw, 0.6 / view.s);
+    const it = buildDraw(pts, {id:g.id, type:'draw', color:lastLine.color, width:lastLine.width, z:nextZ()});
+    items.set(it.id, it); render(it); markDirty(it.id); updateEmpty();
+  }
+  if (g.type === 'move'){
+    if (e.pointerId !== g.pid) return;
+    if (g.moved){
+      g.start.forEach((_, id) => markDirty(id)); dirtyAttached(new Set(g.start.keys()));
+      clearTimeout(flushT); flush();
+      if (room){ clearTimeout(mvClearT); mvClearT = setTimeout(() => sendPresence({mv:null}), 1500); }
+    }
+    else {
+      if (g.collapse) setSel([g.collapse]);
+      handleTap(g.id);
+    }
+  }
+  if (g.type === 'tap') handleTap(g.id);
+  if (g.type === 'resize'){ markDirty(g.id); dirtyAttached(new Set([g.id])); }
+  if (g.type === 'draw' || g.type === 'lineEnd'){
+    if (e.pointerId !== g.pid) return;
+    setTarget(null);
+    const it = items.get(g.id);
+    if (it){
+      const {p1, p2} = lineEnds(it);
+      if (g.type === 'draw' && Math.hypot(p2.x - p1.x, p2.y - p1.y) * view.s < 8){ items.delete(it.id); unrender(it.id); }
+      else { markDirty(it.id); setSel([it.id]); }
+    }
+    if (g.type === 'draw') setTool('select');
+  }
+  if (g.type === 'marquee'){
+    marqueeEl.hidden = true;
+    if (g.lockedId && !g.moved){ setSel([g.lockedId]); handleTap(g.lockedId); }
+  }
+  gesture = null;
+}
+window.addEventListener('pointerup', endPointer);
+window.addEventListener('pointercancel', endPointer);
+function handleTap(id){
+  const now = Date.now();
+  if (lastTap.id === id && now - lastTap.t < 350){
+    lastTap = {id:null, t:0};
+    const it = items.get(id); if (!it || it.type === 'line' || it.type === 'draw') return;
+    if (it.lk){ if (it.type === 'image') fitTo(it, 4); return; }
+    if ((it.type === 'note' || it.type === 'pin') && !readOnly) startEditing(id);
+    else if (it.type === 'pin') return;
+    else fitTo(it, 4);
+    return;
+  }
+  lastTap = {id, t:now};
+}
+
+board.addEventListener('wheel', e => {
+  e.preventDefault();
+  let dx = e.deltaX, dy = e.deltaY;
+  if (e.deltaMode === 1){ dx *= 16; dy *= 16; } else if (e.deltaMode === 2){ dx *= rect.width; dy *= rect.height; }
+  if (e.ctrlKey || e.metaKey) zoomAt(Math.exp(-dy * 0.01), e.clientX, e.clientY);
+  else if (e.shiftKey && !dx){ view.x -= dy; applyView(); }
+  else { view.x -= dx; view.y -= dy; applyView(); }
+}, {passive:false});
+let gs0 = 1;
+board.addEventListener('gesturestart', e => { e.preventDefault(); gs0 = view.s; });
+board.addEventListener('gesturechange', e => { e.preventDefault(); if (pointers.size >= 2) return; zoomAt((gs0 * e.scale) / view.s, e.clientX, e.clientY); });
+board.addEventListener('gestureend', e => e.preventDefault());
+
+/* ---------- drop & paste ---------- */
+const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+board.addEventListener('dragover', e => {
+  if (readOnly || !hasFiles(e)) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; board.classList.add('dropping');
+});
+board.addEventListener('dragleave', e => { if (!board.contains(e.relatedTarget)) board.classList.remove('dropping'); });
+board.addEventListener('drop', e => {
+  e.preventDefault(); board.classList.remove('dropping');
+  if (readOnly) return;
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (files && files.length) addFiles(files, s2w(e.clientX, e.clientY));
+  else toast('画像をいったん保存してから、ファイルとしてドロップしてください');
+});
+document.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+document.addEventListener('drop', e => { if (hasFiles(e)) e.preventDefault(); });
+document.addEventListener('paste', e => {
+  const t = e.target;
+  if (!currentBoard || t.isContentEditable || /INPUT|TEXTAREA/.test(t.tagName) || readOnly) return;
+  const cd = e.clipboardData; if (!cd) return;
+  const files = [...cd.files].filter(f => f.type.startsWith('image/'));
+  if (files.length){ e.preventDefault(); addFiles(files); return; }
+  const text = cd.getData('text/plain');
+  if (text && text.trim()){ e.preventDefault(); addNote(null, text.trim().slice(0, 5000)); }
+});
+
+/* ---------- keyboard ---------- */
+document.addEventListener('keydown', e => {
+  if (!currentBoard){ if (e.key === 'Escape') closeCardMenu(); return; }
+  if (!$('dlg').hidden) return;
+  const t = e.target;
+  if (t.isContentEditable || /INPUT|TEXTAREA/.test(t.tagName)){
+    if (e.key === 'Escape') stopEditing();
+    else if (e.key === 'Enter' && !e.isComposing && editingId && items.get(editingId) && items.get(editingId).type === 'pin'){ e.preventDefault(); stopEditing(); }
+    return;
+  }
+  const mod = e.metaKey || e.ctrlKey, k = e.key;
+  if (e.code === 'Space'){ e.preventDefault(); if (!spaceDown){ spaceDown = true; board.classList.add('hand'); } return; }
+  if (mod && (k === '=' || k === '+' || k === ';')){ e.preventDefault(); zoomCenter(1.25); return; }
+  if (mod && k === '-'){ e.preventDefault(); zoomCenter(0.8); return; }
+  if (mod && k === '0'){ e.preventDefault(); setZoom(1); return; }
+  if (mod && k.toLowerCase() === 'a'){ e.preventDefault(); setSel([...items.values()].filter(i => !i.lk).map(i => i.id)); return; }
+  if (mod && k.toLowerCase() === 'd'){ e.preventDefault(); duplicate(); return; }
+  if (mod && k.toLowerCase() === 'z' && !e.shiftKey){ if (lastDeleted){ e.preventDefault(); undoDelete(); } return; }
+  if (mod || e.altKey) return;
+  if (e.shiftKey && e.code === 'Digit1'){ e.preventDefault(); fitAll(); return; }
+  if (e.shiftKey && e.code === 'Digit2'){ e.preventDefault(); const b = boundsOf(selected()); if (b) fitTo(b, 4); return; }
+  const step = e.shiftKey ? 10 : 1;
+  switch (k){
+    case 'v': case 'V': setTool('select'); break;
+    case 'h': case 'H': setTool('hand'); break;
+    case 'n': case 'N': addNote(); e.preventDefault(); break;
+    case 'l': case 'L': if (!readOnly) setTool('line'); break;
+    case 'p': case 'P': if (!readOnly) setTool('pin'); break;
+    case 'd': case 'D': if (!readOnly) setTool('pen'); break;
+    case 'a': case 'A': if (!readOnly) setTool('arrow'); break;
+    case 'Delete': case 'Backspace': if (sel.size){ e.preventDefault(); removeSelected(); } break;
+    case 'Escape': setSel([]); toggleHelp(false); toggleExport(false); setTool('select'); break;
+    case ']': if (!readOnly) bringFront(); break;
+    case '[': if (!readOnly) sendBack(); break;
+    case 'Enter': { const l = selected(); if (l.length === 1 && (l[0].type === 'note' || l[0].type === 'pin')){ e.preventDefault(); startEditing(l[0].id); } break; }
+    case 'ArrowLeft': if (sel.size){ e.preventDefault(); nudge(-step, 0); } break;
+    case 'ArrowRight': if (sel.size){ e.preventDefault(); nudge(step, 0); } break;
+    case 'ArrowUp': if (sel.size){ e.preventDefault(); nudge(0, -step); } break;
+    case 'ArrowDown': if (sel.size){ e.preventDefault(); nudge(0, step); } break;
+  }
+});
+document.addEventListener('keyup', e => {
+  if (e.code === 'Space'){ spaceDown = false; board.classList.toggle('hand', tool === 'hand'); }
+});
+window.addEventListener('blur', () => { spaceDown = false; board.classList.toggle('hand', tool === 'hand'); });
+
+/* ---------- UI wiring ---------- */
+NOTE_COLORS.forEach(c => {
+  const b = document.createElement('button');
+  b.className = 'sw'; b.style.background = c; b.dataset.c = c; b.setAttribute('aria-label', '付箋の色');
+  b.addEventListener('click', () => setNoteColor(c));
+  swatchesEl.appendChild(b);
+});
+document.querySelectorAll('.toolbar [data-tool]').forEach(b => { b.onclick = () => setTool(b.dataset.tool); });
+LINE_COLORS.forEach(c => {
+  const b = document.createElement('button');
+  b.className = 'sw'; b.style.background = c || 'var(--ink)'; b.dataset.c = c; b.setAttribute('aria-label', '線の色');
+  b.addEventListener('click', () => setLineProp('color', c));
+  $('lineSwatches').appendChild(b);
+});
+PIN_COLORS.forEach(c => {
+  const b = document.createElement('button');
+  b.className = 'sw'; b.style.background = c; b.dataset.c = c; b.setAttribute('aria-label', 'ピンの色');
+  b.addEventListener('click', () => setPinColor(c));
+  $('pinSwatches').appendChild(b);
+});
+$('actLabel').onclick = () => { const l = selected(); if (l.length === 1) startEditing(l[0].id); };
+$('lineWidth').querySelectorAll('button').forEach(b => { b.onclick = () => setLineProp('width', +b.dataset.w); });
+$('lineArrow').querySelectorAll('button').forEach(b => { b.onclick = () => setLineProp('arrow', b.dataset.a); });
+$('toolImage').onclick = () => fileInput.click();
+$('emptyAdd').onclick = () => fileInput.click();
+$('toolNote').onclick = () => addNote();
+fileInput.onchange = () => { if (fileInput.files.length) addFiles(fileInput.files); fileInput.value = ''; };
+$('actFront').onclick = bringFront;
+$('actBack').onclick = sendBack;
+$('actDup').onclick = duplicate;
+$('actDel').onclick = removeSelected;
+$('actLock').onclick = toggleLock;
+$('homeBtn').onclick = goHome;
+$('ghSettings').onclick = () => showGhSetup(ghConfig());
+$('joinBtn').onclick = openJoin;
+$('joinCancel').onclick = () => { $('joinDlg').hidden = true; };
+$('joinGo').onclick = doJoin;
+$('joinCode').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) doJoin(); });
+$('ghCancel').onclick = () => { $('ghSetup').hidden = true; };
+$('ghLocal').onclick = async () => {
+  try { const c = ghConfig() || {}; localStorage.setItem(GH_KEY, JSON.stringify(Object.assign(c, {mode:'local'}))); } catch(e){}
+  if (store){ location.reload(); return; }
+  $('ghSetup').hidden = true; store = await makeLocal(); await store.initBoards();
+};
+$('ghConnect').onclick = async () => {
+  const m = /^\s*(?:https?:\/\/github\.com\/)?([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?\s*$/.exec($('ghRepo').value);
+  if (!m){ $('ghErr').hidden = false; $('ghErr').textContent = 'リポジトリは「ユーザー名/リポジトリ名」の形で入力してください'; return; }
+  const cfg = {mode:'github', owner:m[1], repo:m[2], branch:($('ghBranch').value.trim() || 'board-data'), token:$('ghToken').value.trim()};
+  const btn = $('ghConnect'); btn.disabled = true; btn.textContent = '接続しています…';
+  const res = await ghConnect(cfg);
+  btn.disabled = false; btn.textContent = '接続する';
+  if (res.err){ $('ghErr').hidden = false; $('ghErr').textContent = res.err; return; }
+  try { localStorage.setItem(GH_KEY, JSON.stringify(cfg)); } catch(e){}
+  if (store){ location.reload(); return; }
+  $('ghSetup').hidden = true;
+  await startGitHub(cfg);
+};
+$('newBoard').onclick = createBoard;
+$('boardName').onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === $('boardName')){ e.preventDefault(); e.stopPropagation(); $('boardName').click(); } };
+$('boardName').onclick = () => { if (readOnly || !currentBoard || $('boardName').querySelector('input')) return; const id = currentBoard; inlineRename($('boardName'), boards.get(id).name, v => renameBoard(id, v)); };
+$('cmOpen').onclick = () => { closeCardMenu(); if (menuBoard) openBoard(menuBoard); };
+$('cmRename').onclick = () => {
+  closeCardMenu();
+  const id = menuBoard, host = $('homeGrid').querySelector(`.card[data-id="${id}"] .name`);
+  if (host && boards.get(id)) inlineRename(host, boards.get(id).name, v => renameBoard(id, v));
+};
+$('cmDelete').onclick = () => { closeCardMenu(); if (menuBoard) deleteBoard(menuBoard); };
+$('actArrange').onclick = arrange;
+$('zIn').onclick = () => zoomCenter(1.25);
+$('zOut').onclick = () => zoomCenter(0.8);
+$('zLabel').onclick = () => setZoom(1);
+$('zFit').onclick = fitAll;
+function toggleHelp(v){
+  const h = $('help'), show = v === undefined ? h.hidden : v;
+  h.hidden = !show; $('helpBtn').setAttribute('aria-expanded', String(show));
+}
+$('helpBtn').onclick = () => { toggleExport(false); toggleHelp(); };
+
+/* ---------- export ---------- */
+const exOpt = {scope:'all', bg:'board', fmt:'png', paper:'fit'};
+function segWire(id, key){
+  $(id).querySelectorAll('button').forEach(b => { b.onclick = () => {
+    exOpt[key] = b.dataset.v;
+    $(id).querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    if (key === 'fmt'){ $('exPaperRow').hidden = exOpt.fmt !== 'pdf'; $('exGo').textContent = exOpt.fmt === 'pdf' ? 'PDFを書き出す' : 'PNGを書き出す'; }
+  }; });
+}
+segWire('exScope', 'scope'); segWire('exBg', 'bg'); segWire('exFmt', 'fmt'); segWire('exPaper', 'paper');
+let jsPDFPromise = null;
+function loadJsPDF(){
+  if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+  if (!jsPDFPromise){
+    jsPDFPromise = new Promise((res, rej) => {
+      const sc = document.createElement('script');
+      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      sc.onload = () => (window.jspdf && window.jspdf.jsPDF) ? res(window.jspdf.jsPDF) : rej(new Error('jspdf'));
+      sc.onerror = () => { jsPDFPromise = null; rej(new Error('jspdf')); };
+      document.head.appendChild(sc);
+    });
+  }
+  return jsPDFPromise;
+}
+function drawPin(c, it, ps, font){
+  c.save();
+  c.translate(it.x - 16*ps, it.y - 46*ps); c.scale(ps, ps);
+  c.fillStyle = 'rgba(0,0,0,.28)'; c.beginPath(); c.ellipse(16, 45, 5, 1.8, 0, 0, Math.PI*2); c.fill();
+  const p = new Path2D(PIN_PATH);
+  c.fillStyle = it.color || PIN_COLORS[0]; c.fill(p);
+  c.strokeStyle = '#fff'; c.lineWidth = 1.6; c.stroke(p);
+  c.fillStyle = '#fff'; c.beginPath(); c.arc(16, 16, 4.6, 0, Math.PI*2); c.fill();
+  if (it.text){
+    c.font = `500 13px ${font}`;
+    const tw = Math.min(260, c.measureText(it.text).width + 18), bx = 34, by = 2, bh = 25;
+    c.save(); c.shadowColor = 'rgba(0,0,0,.22)'; c.shadowBlur = 3; c.shadowOffsetY = 1;
+    c.fillStyle = '#FAF9F7'; c.beginPath();
+    if (c.roundRect) c.roundRect(bx, by, tw, bh, 7); else c.rect(bx, by, tw, bh);
+    c.fill(); c.restore();
+    c.save(); c.beginPath(); c.rect(bx, by, tw - 6, bh); c.clip();
+    c.fillStyle = '#2A2B2E'; c.textBaseline = 'middle'; c.fillText(it.text, bx + 9, by + bh/2 + 0.5);
+    c.restore();
+  }
+  c.restore();
+}
+function toggleExport(v){
+  const p = $('exportp'), show = v === undefined ? p.hidden : v;
+  if (show){
+    const selBtn = $('exScope').querySelector('[data-v="sel"]');
+    selBtn.disabled = !sel.size;
+    const scope = sel.size ? 'sel' : 'all'; exOpt.scope = scope;
+    $('exScope').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === scope)));
+    toggleHelp(false);
+  }
+  p.hidden = !show; $('exportBtn').setAttribute('aria-expanded', String(show));
+}
+$('exportBtn').onclick = () => toggleExport();
+function wrapText(c, text, maxW){
+  const out = [];
+  for (const para of text.split('\n')){
+    let line = '';
+    for (const ch of [...para]){
+      const t = line + ch;
+      if (line && c.measureText(t).width > maxW){ out.push(line); line = ch.trim() ? ch : ''; } else line = t;
+    }
+    out.push(line);
+  }
+  return out;
+}
+async function renderCanvas(list, o){
+  const pad = 48;
+  const calcK = o.calcK;
+  const boxesFor = q => list.map(i => {
+    if (i.type !== 'pin') return geom(i);
+    const r = pinBox(i, q); if (i.text) r.w += 270*q; return r;
+  });
+  let bx = boundsOf(boxesFor(o.pinPx / Math.max(view.s, 0.05)));
+  let b = {x:bx.x - pad, y:bx.y - pad, w:bx.w + pad*2, h:bx.h + pad*2};
+  let k = calcK(b);
+  const ps = o.pinPx / k;
+  bx = boundsOf(boxesFor(ps));
+  b = {x:bx.x - pad, y:bx.y - pad, w:bx.w + pad*2, h:bx.h + pad*2};
+  k = calcK(b);
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(b.w * k)); cv.height = Math.max(1, Math.round(b.h * k));
+  const c = cv.getContext('2d');
+  c.scale(k, k); c.translate(-b.x, -b.y);
+  const cs = getComputedStyle(document.documentElement);
+  const ink = cs.getPropertyValue('--ink').trim() || '#2A2B2E';
+  if (o.bg !== 'none'){ c.fillStyle = o.bg === 'white' ? '#FFFFFF' : (cs.getPropertyValue('--canvas').trim() || '#EFEEEA'); c.fillRect(b.x, b.y, b.w, b.h); }
+  try { await document.fonts.ready; } catch(e){}
+  const font = getComputedStyle(document.body).fontFamily;
+  for (const it of list.slice().sort((a, z) => a.z - z.z)){
+    if (it.type === 'image'){
+      const img = els.get(it.id) && els.get(it.id).firstChild;
+      try {
+        if (!img || !img.src) throw 0;
+        if (!img.complete || !img.naturalWidth) await img.decode();
+        c.drawImage(img, it.x, it.y, it.w, it.h);
+      } catch(e){ c.fillStyle = 'rgba(128,128,128,.25)'; c.fillRect(it.x, it.y, it.w, it.h); }
+    } else if (it.type === 'note'){
+      c.save();
+      c.shadowColor = 'rgba(0,0,0,.2)'; c.shadowBlur = 14; c.shadowOffsetY = 5;
+      c.fillStyle = it.color || NOTE_COLORS[0]; c.fillRect(it.x, it.y, it.w, it.h);
+      c.restore(); c.save();
+      c.beginPath(); c.rect(it.x, it.y, it.w, it.h); c.clip();
+      c.fillStyle = '#2A2B2E'; c.font = `400 18px ${font}`; c.textBaseline = 'top';
+      const lh = 18 * 1.6, lines = wrapText(c, it.text || '', it.w - 36);
+      lines.forEach((ln, i) => { const y = it.y + 18 + i*lh + (lh - 18)/2; if (y < it.y + it.h - 18) c.fillText(ln, it.x + 18, y); });
+      c.restore();
+    } else if (it.type === 'pin'){
+      drawPin(c, it, ps, font);
+    } else if (it.type === 'draw'){
+      c.save();
+      c.strokeStyle = it.color || ink; c.lineWidth = it.width || 4; c.lineCap = 'round'; c.lineJoin = 'round';
+      c.stroke(new Path2D(drawPathD(it)));
+      c.restore();
+    } else if (it.type === 'line'){
+      const G = lineGeom(it), col = it.color || ink;
+      c.save();
+      c.strokeStyle = col; c.fillStyle = col; c.lineCap = 'round'; c.lineJoin = 'round';
+      c.lineWidth = G.w; c.beginPath(); c.moveTo(G.s.x, G.s.y); c.lineTo(G.e.x, G.e.y); c.stroke();
+      c.lineWidth = G.w * 0.5;
+      G.heads.forEach(h => { c.beginPath(); c.moveTo(h[0].x, h[0].y); c.lineTo(h[1].x, h[1].y); c.lineTo(h[2].x, h[2].y); c.closePath(); c.fill(); c.stroke(); });
+      c.restore();
+    }
+  }
+  return {cv, b};
+}
+async function exportPNG(){
+  const list = (exOpt.scope === 'sel' ? selected() : [...items.values()]).filter(i => !i.pendingUpload);
+  if (!list.length){ toast('書き出すものがありません'); return; }
+  toggleExport(false); stopEditing();
+  toast('書き出しています…');
+  const cs = getComputedStyle(document.documentElement);
+  let cv, b;
+  try { ({cv, b} = await renderCanvas(list, {bg:exOpt.bg, pinPx:2, calcK:bb => Math.max(0.05, Math.min(2, Math.sqrt(16e6 / (bb.w * bb.h)), 8000 / Math.max(bb.w, bb.h)))})); }
+  catch(e){ toast('画像を作成できませんでした'); return; }
+  let blob;
+  const d = new Date(), pad2 = n => String(n).padStart(2, '0');
+  const base = `board-${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}`;
+  let filename = base + '.png';
+  if (exOpt.fmt === 'pdf'){
+    let JsPDF;
+    try { JsPDF = await loadJsPDF(); } catch(e){ toast('PDFの準備ができませんでした。通信を確認してもう一度お試しください'); return; }
+    try {
+      const landscape = b.w >= b.h;
+      let pw, ph;
+      if (exOpt.paper === 'fit'){
+        const f = Math.min(0.75, 14000 / Math.max(b.w, b.h));
+        pw = b.w * f; ph = b.h * f;
+      } else {
+        const [sw, lw] = exOpt.paper === 'a3' ? [841.89, 1190.55] : [595.28, 841.89];
+        pw = landscape ? lw : sw; ph = landscape ? sw : lw;
+      }
+      const doc = new JsPDF({unit:'pt', format:[pw, ph], orientation:pw >= ph ? 'landscape' : 'portrait', compress:true});
+      if (exOpt.paper !== 'fit' && exOpt.bg !== 'none'){
+        doc.setFillColor(exOpt.bg === 'white' ? '#FFFFFF' : (cs.getPropertyValue('--canvas').trim() || '#EFEEEA'));
+        doc.rect(0, 0, pw, ph, 'F');
+      }
+      const m = exOpt.paper === 'fit' ? 0 : 24;
+      const f2 = Math.min((pw - m*2) / b.w, (ph - m*2) / b.h);
+      const iw = b.w * f2, ih = b.h * f2;
+      const transparent = exOpt.bg === 'none';
+      const data = transparent ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.92);
+      doc.addImage(data, transparent ? 'PNG' : 'JPEG', (pw - iw)/2, (ph - ih)/2, iw, ih, undefined, 'FAST');
+      blob = doc.output('blob');
+      filename = base + '.pdf';
+    } catch(e){ toast('PDFを作成できませんでした'); return; }
+  } else {
+    try { blob = await new Promise((res, rej) => cv.toBlob(bl => bl ? res(bl) : rej(new Error('blob')), 'image/png')); }
+    catch(e){ toast('画像を作成できませんでした'); return; }
+  }
+  let dl = null;
+  try { if (window.claude && typeof window.claude.use === 'function') dl = await window.claude.use('downloads'); } catch(e){}
+  if (dl){
+    try { const r = await dl.save({filename, data:blob}); if (r && r.status === 'saved') toast('書き出しました'); return; }
+    catch(e){
+      const code = e && e.code;
+      if (code === 'declined') return;
+      if (code === 'rate_limited'){ toast('少し待ってからもう一度お試しください'); return; }
+      if (code === 'too_large'){ toast('大きすぎて書き出せませんでした。範囲を選んでお試しください'); return; }
+      if (code === 'extension_not_enabled' || code === 'rejected_extension'){ toast('この形式はここでは書き出せません。PNGをお試しください'); return; }
+    }
+  }
+  const a = document.createElement('a'), u = URL.createObjectURL(blob);
+  a.href = u; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 10000);
+}
+$('exGo').onclick = exportPNG;
+window.addEventListener('resize', () => { rect = board.getBoundingClientRect(); updateOverlay(); });
+window.addEventListener('beforeunload', e => {
+  if (dirty.size){ clearTimeout(flushT); flush(); }
+  if (metaDirty) updateBoardMeta();
+  if (uploadsPending || dirty.size || inflight.size){ e.preventDefault(); e.returnValue = ''; }
+});
+
+let lastToast = '';
+function toast(msg, action){
+  const box = $('toasts');
+  if (!action && msg === lastToast && box.lastChild) return;
+  lastToast = msg;
+  const el = document.createElement('div'); el.className = 'toast';
+  const s = document.createElement('span'); s.textContent = msg; el.appendChild(s);
+  if (action){
+    const b = document.createElement('button'); b.textContent = action.label;
+    b.onclick = () => { action.run(); el.remove(); };
+    el.appendChild(b);
+  }
+  box.appendChild(el);
+  while (box.children.length > 3) box.firstChild.remove();
+  setTimeout(() => { el.remove(); if (lastToast === msg) lastToast = ''; }, action ? 6000 : 3500);
+}
+
+/* ---------- start ---------- */
+async function init(){
+  applyView();
+  let db = null, assets = null;
+  if (window.claude && typeof window.claude.use === 'function'){
+    try { [db, assets] = await Promise.all([window.claude.use('db'), window.claude.use('assets')]); } catch(e){}
+  }
+  if (db){
+    store = makeCloud(db, assets);
+    if (!assets) document.body.classList.add('noimages');
+    store.initBoards();
+    setTimeout(() => { if (!boardsReady) boardsChanged(); }, 9000);
+    initCollab();
+  } else if (window.claude && typeof window.claude.use === 'function'){
+    const L = $('loading');
+    L.textContent = '';
+    const box = document.createElement('div');
+    box.style.cssText = 'max-width:420px;text-align:center;line-height:1.8;padding:24px';
+    const h = document.createElement('div'); h.style.cssText = 'font-size:16px;font-weight:700;color:var(--ink);margin-bottom:8px';
+    h.textContent = '共有ボードを読み込めませんでした';
+    const t = document.createElement('div');
+    t.textContent = 'このページの共有データにアクセスできないようです。オーナーに、組織内のアカウントで「コントリビューター」以上の権限を付けて招待してもらってから、ページを開き直してください。';
+    box.append(h, t); L.appendChild(box); L.hidden = false;
+  } else if (SUPABASE_URL && SUPABASE_ANON_KEY){
+    await startSupabase();
+  } else {
+    const cfg = ghConfig();
+    if (cfg && cfg.mode === 'github') await startGitHub(cfg);
+    else if (cfg && cfg.mode === 'local'){ store = await makeLocal(); await store.initBoards(); }
+    else showGhSetup(null);
+  }
+}
+init();
+})();
+</script>
+</body>
+</html>
